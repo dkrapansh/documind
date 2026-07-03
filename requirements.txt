@@ -6,3 +6,4 @@ sqlalchemy==2.0.35
 psycopg[binary]==3.2.3
 alembic==1.13.3
 python-dotenv==1.0.1
+pgvector==0.3.6
