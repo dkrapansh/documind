@@ -11,7 +11,7 @@ def create_api_key(db: Session, tenant_id: int) -> tuple[ApiKey, str]:
     db.refresh(api_key)
     return api_key, raw_key
 
-def het_by_hashed_key(db: Session, hashed_key: str) -> ApiKey | None:
+def get_by_hashed_key(db: Session, hashed_key: str) -> ApiKey | None:
     return db.query(ApiKey).filter(
         ApiKey.hashed_key == hashed_key, ApiKey.revoked.is_(False)
     ).first()
