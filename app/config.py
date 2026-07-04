@@ -6,4 +6,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     database_url: str
 
+    rate_limit_requests: int = 60
+    rate_limit_window_seconds: int = 60
+
 settings = Settings()
