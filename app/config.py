@@ -9,4 +9,7 @@ class Settings(BaseSettings):
     rate_limit_requests: int = 60
     rate_limit_window_seconds: int = 60
 
+    openai_api_key: str
+    embedding_model: str = "text-embedding-3-small"
+
 settings = Settings()
