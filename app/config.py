@@ -12,4 +12,5 @@ class Settings(BaseSettings):
     openai_api_key: str
     embedding_model: str = "text-embedding-3-small"
 
+    storage_dir: str = "storage"
 settings = Settings()
