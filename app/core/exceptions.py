@@ -20,3 +20,10 @@ class InvalidAPIKeyException(AppException):
 class RateLimitExceededException(AppException):
     status_code = 429
     detail = "Rate limit exceeded"
+
+class UnsupportedFileTypeException(AppException):
+    status_code = 400
+
+    def __init__(self, extension: str):
+        self.detail = f"Unsupported file type '{extension}'. Supported: .txt, .pdf, .docx"
+        super().__init__(self.detail)
