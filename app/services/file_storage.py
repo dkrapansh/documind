@@ -17,3 +17,9 @@ def save_file(content_hash: str, original_filename: str, file_bytes: bytes) -> P
         destination.write_bytes(file_bytes)
 
     return destination
+
+def load_file(content_hash: str, original_filename: str) -> bytes:
+    storage_path = Path(settings.storage_dir)
+    extension = Path(original_filename).suffix
+    source = storage_path / f"{content_hash}{extension}"
+    return source.read_bytes()

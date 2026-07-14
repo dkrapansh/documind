@@ -13,6 +13,12 @@ _splitter = RecursiveCharacterTextSplitter(
     separators=["\n\n", "\n", ". ", " ", ""]
 )
 
+def count_tokens(text: str) -> int:
+    """Public wrapper around _count_tokens so other modules (ingestion)
+    can get a chunk's token count without duplicating the tiktoken
+    encoding setup."""
+    return _count_tokens(text)
+
 def chunk_text(text: str) -> list[str]:
     """Split raw document text into ~500-token chunks with ~60-token overlap.
     Splits on the most natural boundary available (paragraph, then line,
