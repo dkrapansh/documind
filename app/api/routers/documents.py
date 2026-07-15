@@ -39,7 +39,7 @@ async def upload_document(
 
     return document
 
-@router.get("", response_mdoel=list[DocumentResponse], dependencies=[Depends(api_key_header)])
+@router.get("", response_model=list[DocumentResponse], dependencies=[Depends(api_key_header)])
 async def list_documents(
     request:Request,
     db: Session = Depends(get_db),

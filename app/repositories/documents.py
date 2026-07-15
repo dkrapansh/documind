@@ -41,8 +41,10 @@ def get_by_id_for_tenant(db: Session, document_id: int, tenant_id: int) -> Docum
         Document.tenant_id == tenant_id,
     ).first()
 
-def get_by_id_for_tenant(db: Session, document_id: int, tenant_id: int) -> Document | None:
-    return db.query(Document).filter(
-        Document.id == document_id,
-        Document.tenant_id == tenant_id,
-    ).first()
+def list_by_tenant(db: Session, tenant_id: int) -> list[Document]:
+    return (
+        db.query(Document)
+        .filter(Document.tenant_id == tenant_id)
+        .order_by(Document.upload_time.desc())
+        .all()
+    )
