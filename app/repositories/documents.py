@@ -35,3 +35,14 @@ def update_status(
     if chunk_count is not None:
         document.chunk_count = chunk_count
     
+def get_by_id_for_tenant(db: Session, document_id: int, tenant_id: int) -> Document | None:
+    return db.query(Document).filter(
+        Document.id == document_id,
+        Document.tenant_id == tenant_id,
+    ).first()
+
+def get_by_id_for_tenant(db: Session, document_id: int, tenant_id: int) -> Document | None:
+    return db.query(Document).filter(
+        Document.id == document_id,
+        Document.tenant_id == tenant_id,
+    ).first()
