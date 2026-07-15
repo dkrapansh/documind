@@ -3,11 +3,13 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.api.security_scheme import api_key_header
-from app.repositories.documents import create_document, get_by_content_hash
+from app.repositories.documents import create_document, get_by_content_hash, get_by_id_for_tenant, list_by_tenant
 from app.schemas.document import DocumentResponse
 from app.services.file_storage import compute_content_hash, save_file
 from app.services.ingestion import process_document
 from app.services.text_extraction import validate_extension
+
+from app.core.exceptions import DocumentNotFoundException
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -35,4 +37,24 @@ async def upload_document(
 
     background_tasks.add_task(process_document, document.id)
 
+    return document
+
+@router.get("", response_mdoel=list[DocumentResponse], dependencies=[Depends(api_key_header)])
+async def list_documents(
+    request:Request,
+    db: Session = Depends(get_db),
+):
+    tenant_id = request.state.tenant_id
+    return list_by_tenant
+
+@router.get("/{document_id}", response_model=DocumentResponse, dependencies=[Depends(api_key_header)])
+async def get_document_status(
+    document_id: int,
+    request: Request, 
+    db: Session = Depends(get_db),
+):
+    tenant_id = request.state.tenant_id
+    document = get_by_id_for_tenant(db, document_id, tenant_id)
+    if document is None:
+        raise DocumentNotFoundException()
     return document

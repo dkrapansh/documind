@@ -27,3 +27,7 @@ class UnsupportedFileTypeException(AppException):
     def __init__(self, extension: str):
         self.detail = f"Unsupported file type '{extension}'. Supported: .txt, .pdf, .docx"
         super().__init__(self.detail)
+    
+class DocumentNotFoundException(AppException):
+    status_code = 404
+    detail = "Document not found"
