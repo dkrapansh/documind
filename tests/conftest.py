@@ -16,6 +16,8 @@ import app.models
 from app.main import app
 import app.middleware.rate_limit as rate_limit_module
 
+from sqlalchemy.orm import sessionmaker
+
 @pytest.fixture(scope="session")
 def test_engine():
     engine = create_engine(settings.database_url)
@@ -40,3 +42,10 @@ def clean_slate(test_engine):
 def client():
     with TestClient(app) as c:
         yield c
+
+@pytest.fixture
+def db_session(test_engine):
+    TestSessionLocal = sessionmaker(bind=test_engine)
+    session = TestSessionLocal()
+    yield session
+    session.close()
