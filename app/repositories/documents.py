@@ -31,7 +31,7 @@ def update_status(
     document = db.query(Document).filter(Document.id == document_id).first()
     if document is None:
         return
-    document_status = status
+    document.status = status
     if chunk_count is not None:
         document.chunk_count = chunk_count
     

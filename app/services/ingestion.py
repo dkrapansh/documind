@@ -30,7 +30,7 @@ def process_document(document_id: int) -> None:
             logger.error("process_codument: document %s not found", document_id)
             return
         
-        update_status(db.document_id, "processing")
+        update_status(db, document_id, "processing")
         db.commit()
 
         file_bytes = load_file(document.content_hash, document.filename)
