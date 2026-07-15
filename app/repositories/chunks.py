@@ -23,3 +23,26 @@ def create_chunks(
                 token_count=chunk["token_count"],
             )
         )
+
+def search_by_embedding(
+    db: Session,
+    tenant_id: int,
+    query_embedding: list[float],
+    top_k: int,
+) -> list[tuple[Chunk, float]]:
+    """Find the top_k chunks whose embeddings are closest (by cosine
+    distance) to the given query embedding, scoped to one tenant.
+
+    Returns (Chunk, distance) pairs — smaller distance means more
+    similar. The HNSW index from Day 11 makes this ORDER BY fast even
+    as the chunks table grows.
+    """
+    distance = Chunk.embedding.cosine_distance(query_embedding)
+    results = (
+        db.query(Chunk, distance.label("distance"))
+        .filter(Chunk.tenant_id == tenant_id)
+        .order_by(distance)
+        .limit(top_k)
+        .all()
+    )
+    return [(row[0], row[1]) for row in results]
