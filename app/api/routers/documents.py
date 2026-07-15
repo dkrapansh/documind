@@ -45,7 +45,7 @@ async def list_documents(
     db: Session = Depends(get_db),
 ):
     tenant_id = request.state.tenant_id
-    return list_by_tenant
+    return list_by_tenant(db, tenant_id)
 
 @router.get("/{document_id}", response_model=DocumentResponse, dependencies=[Depends(api_key_header)])
 async def get_document_status(
