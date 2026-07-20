@@ -8,7 +8,8 @@ class RetrievedChunk(BaseModel):
     document_id: int
     chunk_index: int
     text: str
-    distance: float
+    distance: float | None = None
+    confidence: float | None = None
 
     model_config = {"from_attrubutes": True}
 
