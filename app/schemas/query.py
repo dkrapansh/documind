@@ -23,3 +23,10 @@ class BM25Chunk(BaseModel):
     chunk_index: int
     text: str
     score: float
+
+class FusedChunk(BaseModel):
+    id: int
+    document_id: int
+    chunk_index: int
+    text: str
+    rrf_score: float
