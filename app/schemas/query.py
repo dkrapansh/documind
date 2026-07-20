@@ -16,3 +16,10 @@ class QueryResponse(BaseModel):
     question: str
     answer: str
     sources: list[RetrievedChunk]
+
+class BM25Chunk(BaseModel):
+    id: int
+    document_id: int
+    chunk_index: int
+    text: str
+    score: float

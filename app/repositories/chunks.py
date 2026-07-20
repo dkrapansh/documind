@@ -46,3 +46,16 @@ def search_by_embedding(
         .all()
     )
     return [(row[0], row[1]) for row in results]
+
+def list_by_tenant(db: Session, tenant_id: int) -> list[Chunk]:
+    """All chunks for a tenant, unscored. BM25 has no SQL-level index to
+    rank by (unlike the pgvector ANN search above) — it needs the whole
+    corpus in memory to score against, so the repository's job here is
+    just the tenant-scoped fetch; scoring happens in the service layer.
+    """
+    return (
+        db.query(Chunk)
+        .filter(Chunk.tenant_id == tenant_id)
+        .order_by(Chunk.id)
+        .all()
+    )
