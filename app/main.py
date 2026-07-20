@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.api.routers import health, auth, documents
+from app.api.routers import health, auth, documents, query
 from app.core.exceptions import AppException
 from app.middleware.auth import AuthMiddleware
 from app.middleware.correlation_id import CorrelationIdMiddleware
@@ -22,3 +22,4 @@ async def app_exception_handler(request: Request, exc: AppException):
 app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(documents.router)
+app.include_router(query.router)
