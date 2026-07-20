@@ -11,3 +11,8 @@ class RetrievedChunk(BaseModel):
     distance: float
 
     model_config = {"from_attrubutes": True}
+
+class QueryResponse(BaseModel):
+    question: str
+    answer: str
+    sources: list[RetrievedChunk]
