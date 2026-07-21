@@ -1,0 +1,3 @@
+Team Collaboration Features
+
+The Business and Enterprise plans support shared team folders with role-based permissions: Viewer, Editor, and Admin. The Standard plan is single-user only and does not support shared folders. Team admins can add or remove members and reassign folder ownership at any time. Each Business plan subscription includes up to 10 team member seats; additional seats can be purchased for $5/month per seat.

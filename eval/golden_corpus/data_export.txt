@@ -1,0 +1,3 @@
+Data Export and Portability
+
+Customers can export all files and account metadata at any time from the account settings page. Exports are packaged as a single ZIP archive and are available for download for 7 days before the export link expires. Metadata, including folder structure and file version history, is exported as a JSON manifest alongside the files. There is no limit on how many times a customer may request an export.

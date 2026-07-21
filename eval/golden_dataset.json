@@ -1,5 +1,5 @@
 {
-  "version": "v1",
+  "version": "v2",
   "schema": {
     "id": "stable identifier, referenced across eval runs to track a question's metrics over time",
     "question": "the natural-language question sent to POST /query during an eval run",
@@ -132,6 +132,174 @@
     {
       "id": "gd-013",
       "question": "Can I pay for my subscription using cryptocurrency?",
+      "ground_truth": "I don't have enough relevant information in the uploaded documents to answer that question confidently.",
+      "reference_contexts": [],
+      "source_documents": [],
+      "category": "expected_refusal"
+    },
+    {
+      "id": "gd-014",
+      "question": "What HTTP status code do I get if I exceed my daily API request limit?",
+      "ground_truth": "Exceeding the daily API request limit returns an HTTP 429 response until the limit resets at midnight UTC.",
+      "reference_contexts": [
+        "Exceeding the daily limit returns an HTTP 429 response until the limit resets at midnight UTC."
+      ],
+      "source_documents": ["api_access.txt"],
+      "category": "single_chunk_lookup"
+    },
+    {
+      "id": "gd-015",
+      "question": "How many API requests per day does the Standard plan allow?",
+      "ground_truth": "The Standard plan is limited to 1,000 API requests per day.",
+      "reference_contexts": [
+        "The Standard plan is limited to 1,000 API requests per day; the Business plan allows 10,000 requests per day; the Enterprise plan has no fixed rate limit and instead uses a fair-use policy."
+      ],
+      "source_documents": ["api_access.txt"],
+      "category": "single_chunk_lookup"
+    },
+    {
+      "id": "gd-016",
+      "question": "How long is a data export download link available before it expires?",
+      "ground_truth": "Exports are available for download for 7 days before the export link expires.",
+      "reference_contexts": [
+        "Exports are packaged as a single ZIP archive and are available for download for 7 days before the export link expires."
+      ],
+      "source_documents": ["data_export.txt"],
+      "category": "single_chunk_lookup"
+    },
+    {
+      "id": "gd-017",
+      "question": "In what format is file version history exported?",
+      "ground_truth": "File version history is exported as a JSON manifest alongside the files.",
+      "reference_contexts": [
+        "Metadata, including folder structure and file version history, is exported as a JSON manifest alongside the files."
+      ],
+      "source_documents": ["data_export.txt"],
+      "category": "single_chunk_lookup"
+    },
+    {
+      "id": "gd-018",
+      "question": "Does the Standard plan support shared team folders?",
+      "ground_truth": "No, the Standard plan is single-user only and does not support shared folders.",
+      "reference_contexts": [
+        "The Standard plan is single-user only and does not support shared folders."
+      ],
+      "source_documents": ["team_collaboration.txt"],
+      "category": "single_chunk_lookup"
+    },
+    {
+      "id": "gd-019",
+      "question": "How much does it cost to add an extra team seat beyond the Business plan's included seats?",
+      "ground_truth": "Additional team seats can be purchased for $5/month per seat.",
+      "reference_contexts": [
+        "Each Business plan subscription includes up to 10 team member seats; additional seats can be purchased for $5/month per seat."
+      ],
+      "source_documents": ["team_collaboration.txt"],
+      "category": "single_chunk_lookup"
+    },
+    {
+      "id": "gd-020",
+      "question": "How much account credit do I get for a successful referral?",
+      "ground_truth": "Both the referrer and the new customer receive a $10 account credit.",
+      "reference_contexts": [
+        "When a referred customer subscribes to a paid plan, both the referrer and the new customer receive a $10 account credit."
+      ],
+      "source_documents": ["referral_program.txt"],
+      "category": "single_chunk_lookup"
+    },
+    {
+      "id": "gd-021",
+      "question": "How long do unused referral credits stay valid before they expire?",
+      "ground_truth": "Referral credits expire if unused after 12 months.",
+      "reference_contexts": [
+        "Referral credits are applied automatically within 3 business days of the referred customer's first successful payment and expire if unused after 12 months."
+      ],
+      "source_documents": ["referral_program.txt"],
+      "category": "single_chunk_lookup"
+    },
+    {
+      "id": "gd-022",
+      "question": "After how many hours without an update does an unresolved critical support issue get escalated to engineering?",
+      "ground_truth": "Unresolved critical issues are automatically escalated to engineering after 2 hours without update.",
+      "reference_contexts": [
+        "Unresolved critical issues are automatically escalated to engineering after 2 hours without update."
+      ],
+      "source_documents": ["support_policy.txt"],
+      "category": "single_chunk_lookup"
+    },
+    {
+      "id": "gd-023",
+      "question": "What security certification does Northwind hold, and how often is it audited?",
+      "ground_truth": "Northwind is SOC 2 Type II certified and undergoes an independent security audit annually.",
+      "reference_contexts": [
+        "Northwind is SOC 2 Type II certified and undergoes an independent security audit annually."
+      ],
+      "source_documents": ["security_policy.txt"],
+      "category": "single_chunk_lookup"
+    },
+    {
+      "id": "gd-024",
+      "question": "As a Business plan customer, what support response time can I expect and how many API requests am I allowed per day?",
+      "ground_truth": "Business-tier customers get a target support response time of 4 hours, 24/7, and are allowed 10,000 API requests per day.",
+      "reference_contexts": [
+        "Business-tier customers receive priority email and chat support with a target response time of 4 hours, 24/7.",
+        "The Standard plan is limited to 1,000 API requests per day; the Business plan allows 10,000 requests per day; the Enterprise plan has no fixed rate limit and instead uses a fair-use policy."
+      ],
+      "source_documents": ["support_policy.txt", "api_access.txt"],
+      "category": "multi_chunk_synthesis"
+    },
+    {
+      "id": "gd-025",
+      "question": "On the Enterprise plan, is there a fixed API rate limit, and what support response time is guaranteed?",
+      "ground_truth": "No, the Enterprise plan has no fixed API rate limit and instead uses a fair-use policy; it comes with a guaranteed 1-hour support response time from a dedicated support engineer.",
+      "reference_contexts": [
+        "The Standard plan is limited to 1,000 API requests per day; the Business plan allows 10,000 requests per day; the Enterprise plan has no fixed rate limit and instead uses a fair-use policy.",
+        "Enterprise-tier customers are assigned a dedicated support engineer and receive a guaranteed 1-hour response time under their support SLA."
+      ],
+      "source_documents": ["api_access.txt", "support_policy.txt"],
+      "category": "multi_chunk_synthesis"
+    },
+    {
+      "id": "gd-026",
+      "question": "How much does the Business plan cost per month, and how many team seats does that include?",
+      "ground_truth": "The Business plan costs $29/month and includes up to 10 team member seats.",
+      "reference_contexts": [
+        "The Business plan costs $29/month and includes 1 TB of storage with priority chat and email support.",
+        "Each Business plan subscription includes up to 10 team member seats; additional seats can be purchased for $5/month per seat."
+      ],
+      "source_documents": ["pricing_plans.txt", "team_collaboration.txt"],
+      "category": "multi_chunk_synthesis"
+    },
+    {
+      "id": "gd-027",
+      "question": "If I'm on the Standard plan and want to start sharing folders with teammates, which plan would I need to upgrade to, and what would it cost per month?",
+      "ground_truth": "You would need to upgrade to the Business plan, which supports shared team folders and costs $29/month.",
+      "reference_contexts": [
+        "The Standard plan is single-user only and does not support shared folders.",
+        "The Business plan costs $29/month and includes 1 TB of storage with priority chat and email support."
+      ],
+      "source_documents": ["team_collaboration.txt", "pricing_plans.txt"],
+      "category": "multi_chunk_synthesis"
+    },
+    {
+      "id": "gd-028",
+      "question": "Does Northwind offer a free trial period?",
+      "ground_truth": "I don't have enough relevant information in the uploaded documents to answer that question confidently.",
+      "reference_contexts": [],
+      "source_documents": [],
+      "category": "expected_refusal"
+    },
+    {
+      "id": "gd-029",
+      "question": "Is there a discount available for non-profit organizations?",
+      "ground_truth": "I don't have enough relevant information in the uploaded documents to answer that question confidently.",
+      "reference_contexts": [],
+      "source_documents": [],
+      "category": "expected_refusal"
+    },
+    {
+      "id": "gd-030",
+      "question": "Can I white-label the Northwind platform under my own branding?",
       "ground_truth": "I don't have enough relevant information in the uploaded documents to answer that question confidently.",
       "reference_contexts": [],
       "source_documents": [],
