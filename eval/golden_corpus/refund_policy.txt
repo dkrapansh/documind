@@ -1,0 +1,3 @@
+Refund Policy
+
+Northwind Cloud Storage customers may request a refund within 30 days of purchase for any paid subscription plan. Refunds are processed to the original payment method within 5-7 business days. Annual plans are refunded on a pro-rated basis after the first 30 days; monthly plans are non-refundable once the 30-day window has closed. Refund requests must be submitted through the billing dashboard or by emailing billing@northwindcloud.example.

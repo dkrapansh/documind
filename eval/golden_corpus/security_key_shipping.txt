@@ -1,0 +1,3 @@
+Hardware Security Key Shipping
+
+Northwind sells an optional physical two-factor authentication hardware key for $25 per key. Domestic orders ship within 3-5 business days via standard mail. International orders ship within 10-14 business days. A tracking number is emailed once the order leaves the warehouse. Hardware keys are non-refundable once shipped, but are covered by a 1-year manufacturer defect warranty.

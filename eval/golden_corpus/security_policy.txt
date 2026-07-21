@@ -1,0 +1,3 @@
+Data Security Policy
+
+All files stored on Northwind Cloud Storage are encrypted at rest using AES-256 and in transit using TLS 1.3. Northwind is SOC 2 Type II certified and undergoes an independent security audit annually. In the event of a confirmed data breach affecting customer data, Northwind notifies affected customers within 72 hours of confirmation, in line with standard regulatory breach-notification requirements.

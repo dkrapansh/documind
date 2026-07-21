@@ -1,0 +1,3 @@
+Account Cancellation and Data Retention
+
+Customers may cancel their subscription at any time from the account settings page; cancellation takes effect at the end of the current billing period. After cancellation, account data is retained for 30 days to allow for reactivation, after which all files and account data are permanently deleted. Cancelling mid-cycle does not entitle the customer to a prorated refund for the current billing period under the standard refund policy.

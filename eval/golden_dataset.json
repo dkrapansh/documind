@@ -1,0 +1,141 @@
+{
+  "version": "v1",
+  "schema": {
+    "id": "stable identifier, referenced across eval runs to track a question's metrics over time",
+    "question": "the natural-language question sent to POST /query during an eval run",
+    "ground_truth": "the correct answer, used by context_precision (and for human sanity-checking faithfulness/answer_relevancy scores)",
+    "reference_contexts": "exact excerpt(s) from eval/golden_corpus/ that should have been retrieved to answer correctly; empty list for expected_refusal items, since no supporting passage exists",
+    "source_documents": "which eval/golden_corpus/ files reference_contexts were drawn from, so the eval harness knows what to ingest",
+    "category": "single_chunk_lookup | multi_chunk_synthesis | expected_refusal"
+  },
+  "items": [
+    {
+      "id": "gd-001",
+      "question": "How many days do I have to request a refund after purchase?",
+      "ground_truth": "Customers may request a refund within 30 days of purchase for any paid subscription plan.",
+      "reference_contexts": [
+        "Northwind Cloud Storage customers may request a refund within 30 days of purchase for any paid subscription plan."
+      ],
+      "source_documents": ["refund_policy.txt"],
+      "category": "single_chunk_lookup"
+    },
+    {
+      "id": "gd-002",
+      "question": "How long does it take for a refund to be processed once approved?",
+      "ground_truth": "Refunds are processed to the original payment method within 5-7 business days.",
+      "reference_contexts": [
+        "Refunds are processed to the original payment method within 5-7 business days."
+      ],
+      "source_documents": ["refund_policy.txt"],
+      "category": "single_chunk_lookup"
+    },
+    {
+      "id": "gd-003",
+      "question": "How long does international shipping take for the hardware security key?",
+      "ground_truth": "International orders of the hardware security key ship within 10-14 business days.",
+      "reference_contexts": [
+        "International orders ship within 10-14 business days."
+      ],
+      "source_documents": ["security_key_shipping.txt"],
+      "category": "single_chunk_lookup"
+    },
+    {
+      "id": "gd-004",
+      "question": "What response time SLA does an Enterprise-tier customer get from support?",
+      "ground_truth": "Enterprise-tier customers are assigned a dedicated support engineer and receive a guaranteed 1-hour response time.",
+      "reference_contexts": [
+        "Enterprise-tier customers are assigned a dedicated support engineer and receive a guaranteed 1-hour response time under their support SLA."
+      ],
+      "source_documents": ["support_policy.txt"],
+      "category": "single_chunk_lookup"
+    },
+    {
+      "id": "gd-005",
+      "question": "What encryption standard is used to protect files at rest?",
+      "ground_truth": "Files stored on Northwind Cloud Storage are encrypted at rest using AES-256.",
+      "reference_contexts": [
+        "All files stored on Northwind Cloud Storage are encrypted at rest using AES-256 and in transit using TLS 1.3."
+      ],
+      "source_documents": ["security_policy.txt"],
+      "category": "single_chunk_lookup"
+    },
+    {
+      "id": "gd-006",
+      "question": "How much storage does the Business plan include, and what does it cost per month?",
+      "ground_truth": "The Business plan costs $29/month and includes 1 TB of storage.",
+      "reference_contexts": [
+        "The Business plan costs $29/month and includes 1 TB of storage with priority chat and email support."
+      ],
+      "source_documents": ["pricing_plans.txt"],
+      "category": "single_chunk_lookup"
+    },
+    {
+      "id": "gd-007",
+      "question": "How long is my data kept after I cancel my account before it's deleted?",
+      "ground_truth": "After cancellation, account data is retained for 30 days to allow for reactivation, after which it is permanently deleted.",
+      "reference_contexts": [
+        "After cancellation, account data is retained for 30 days to allow for reactivation, after which all files and account data are permanently deleted."
+      ],
+      "source_documents": ["account_cancellation.txt"],
+      "category": "single_chunk_lookup"
+    },
+    {
+      "id": "gd-008",
+      "question": "Does the Business plan include chat support, and what response time can I expect?",
+      "ground_truth": "Yes, the Business plan includes priority chat and email support, with a target response time of 4 hours, 24/7.",
+      "reference_contexts": [
+        "The Business plan costs $29/month and includes 1 TB of storage with priority chat and email support.",
+        "Business-tier customers receive priority email and chat support with a target response time of 4 hours, 24/7."
+      ],
+      "source_documents": ["pricing_plans.txt", "support_policy.txt"],
+      "category": "multi_chunk_synthesis"
+    },
+    {
+      "id": "gd-009",
+      "question": "If I cancel my monthly plan partway through the billing cycle, will I get a prorated refund, and how long before my data is deleted?",
+      "ground_truth": "No, monthly plans are non-refundable once the 30-day window has closed, and cancelling mid-cycle does not entitle you to a prorated refund either way. Your account data is retained for 30 days after cancellation, then permanently deleted.",
+      "reference_contexts": [
+        "Annual plans are refunded on a pro-rated basis after the first 30 days; monthly plans are non-refundable once the 30-day window has closed.",
+        "Cancelling mid-cycle does not entitle the customer to a prorated refund for the current billing period under the standard refund policy.",
+        "After cancellation, account data is retained for 30 days to allow for reactivation, after which all files and account data are permanently deleted."
+      ],
+      "source_documents": ["refund_policy.txt", "account_cancellation.txt", "account_cancellation.txt"],
+      "category": "multi_chunk_synthesis"
+    },
+    {
+      "id": "gd-010",
+      "question": "Which is the cheapest plan that includes 24/7 priority support, and what's its response time target?",
+      "ground_truth": "The Business plan ($29/month) is the cheapest plan with 24/7 priority support, targeting a 4-hour response time.",
+      "reference_contexts": [
+        "The Business plan costs $29/month and includes 1 TB of storage with priority chat and email support.",
+        "Business-tier customers receive priority email and chat support with a target response time of 4 hours, 24/7."
+      ],
+      "source_documents": ["pricing_plans.txt", "support_policy.txt"],
+      "category": "multi_chunk_synthesis"
+    },
+    {
+      "id": "gd-011",
+      "question": "Does Northwind support single sign-on (SSO) via SAML?",
+      "ground_truth": "I don't have enough relevant information in the uploaded documents to answer that question confidently.",
+      "reference_contexts": [],
+      "source_documents": [],
+      "category": "expected_refusal"
+    },
+    {
+      "id": "gd-012",
+      "question": "What is Northwind's guaranteed uptime SLA percentage?",
+      "ground_truth": "I don't have enough relevant information in the uploaded documents to answer that question confidently.",
+      "reference_contexts": [],
+      "source_documents": [],
+      "category": "expected_refusal"
+    },
+    {
+      "id": "gd-013",
+      "question": "Can I pay for my subscription using cryptocurrency?",
+      "ground_truth": "I don't have enough relevant information in the uploaded documents to answer that question confidently.",
+      "reference_contexts": [],
+      "source_documents": [],
+      "category": "expected_refusal"
+    }
+  ]
+}
