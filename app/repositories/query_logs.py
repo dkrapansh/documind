@@ -27,3 +27,11 @@ def create_query_log(
     db.commit()
     db.refresh(log)
     return log
+
+def list_by_session(db: Session, tenant_id: int, session_id: str) -> list[QueryLog]:
+    return (
+        db.query(QueryLog)
+        .filter(QueryLog.tenant_id == tenant_id, QueryLog.session_id == session_id)
+        .order_by(QueryLog.created_at)
+        .all()
+    )

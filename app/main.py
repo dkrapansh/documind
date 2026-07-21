@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.api.routers import health, auth, documents, query
+from app.api.routers import health, auth, documents, history, query
 from app.core.exceptions import AppException
 from app.middleware.auth import AuthMiddleware
 from app.middleware.correlation_id import CorrelationIdMiddleware
@@ -23,3 +23,4 @@ app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(documents.router)
 app.include_router(query.router)
+app.include_router(history.router)

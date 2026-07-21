@@ -28,18 +28,22 @@ async def query_documents(
     tenant_id = request.state.tenant_id
     started_at = time.perf_counter()
 
+    # First call of a conversation gets a minted session_id; the caller
+    # sends it back on follow-ups so history groups by session, not by
+    # individual request.
+    session_id = body.session_id or str(uuid.uuid4())
+
     chunks = retrieve_ranked(db, tenant_id, body.question)
     if not chunks:
         response = QueryResponse(question=body.question, answer=REFUSAL_ANSWER, sources=[])
     else:
         response = answer_question(body.question, chunks)
+    response.session_id = session_id
 
-    # session_id has no client-supplied value to thread yet (that's Day 22);
-    # a per-request id keeps the NOT NULL column satisfied until then.
     create_query_log(
         db,
         tenant_id=tenant_id,
-        session_id=str(uuid.uuid4()),
+        session_id=session_id,
         question=body.question,
         retrieved_chunk_ids=[chunk.id for chunk in chunks],
         answer=response.answer,
