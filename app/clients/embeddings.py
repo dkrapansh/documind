@@ -10,8 +10,8 @@ _client = genai.Client(
 )
 
 @retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=1, max=3)
+    stop=stop_after_attempt(8),
+    wait=wait_exponential(multiplier=1, min=2, max=30)
 )
 def embed_text(text: str) -> list[float]:
     """Turn a string into a 1536-dim embedding vector via Gemini.
@@ -20,9 +20,10 @@ def embed_text(text: str) -> list[float]:
     defaults to 3072 dims, which would not fit the existing
     chunks.embedding Vector(1536) column.
 
-    Retries up to 3 times with exponential backoff (1s, 2s, 4s) on
-    transient failures — a single dropped connection during a 50-page
-    ingestion job shouldn't fail the whole document.
+    Retries up to 8 times with exponential backoff (2s, 4s, 8s, 16s, then
+    30s capped) on transient failures - recalibrated alongside
+    clients/llm.py, twice, against real Gemini free-tier 429s (see that
+    module's docstring for the two incidents that drove each bump).
     """
     response = _client.models.embed_content(
         model=settings.gemini_embedding_model,
