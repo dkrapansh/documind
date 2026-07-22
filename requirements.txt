@@ -1,7 +1,7 @@
 fastapi==0.115.0
 uvicorn[standard]==0.32.0
 pydantic==2.13.4
-pydantic-settings==2.5.2
+pydantic-settings==2.14.2
 sqlalchemy==2.0.35
 psycopg[binary]==3.2.3
 alembic==1.13.3
@@ -9,13 +9,16 @@ python-dotenv==1.0.1
 pgvector==0.3.6
 pytest==8.3.3
 httpx==0.28.1
-openai==1.51.0
+openai==2.46.0
 google-genai==2.13.0
 tenacity==9.0.0
-langchain-text-splitters==0.3.0
+langchain-text-splitters==1.1.2
 tiktoken==0.8.0
 python-multipart==0.0.12
 pypdf==6.14.2
 python-docx==1.2.0
 rank-bm25==0.2.2
 sentence-transformers==3.2.1
+ragas==0.3.9
+langchain-google-genai==4.3.1
+langchain-community==0.4.0

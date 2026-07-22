@@ -8,20 +8,33 @@ from app.services.hybrid_retrieval import hybrid_retrieve
 CANDIDATE_K = 10
 FINAL_TOP_K = 4
 
-def retrieve_ranked(db: Session, tenant_id: int, question: str) -> list[RetrievedChunk]:
+def retrieve_ranked(
+    db: Session,
+    tenant_id: int,
+    question: str,
+    confidence_threshold: float | None = None,
+) -> list[RetrievedChunk]:
     """The full hybrid retrieval funnel POST /query actually calls:
     RRF-fused candidates from dense + BM25 (hybrid_retrieval.py), cross-
     encoder reranked (clients/reranker.py), cut to the final top_k.
 
     Returns an empty list - a refusal signal, not an error - when there
     are no candidates at all, or when even the best-reranked candidate
-    scores below settings.confidence_threshold. Refusing here, before
+    scores below the confidence threshold. Refusing here, before
     ever calling the LLM, is a deliberate second line of defense beyond
     the system prompt's "say so if insufficient" instruction: it's
     deterministic (doesn't depend on the model choosing to comply) and
     it skips a paid LLM call entirely when we already know the context
     is weak.
+
+    confidence_threshold defaults to settings.confidence_threshold, but
+    can be overridden per-call - the eval harness (services/evaluation.py)
+    uses this to re-run the golden set against a candidate threshold
+    without mutating global settings.
     """
+    if confidence_threshold is None:
+        confidence_threshold = settings.confidence_threshold
+
     candidates = hybrid_retrieve(db, tenant_id, question, top_k=CANDIDATE_K)
     if not candidates:
         return []
@@ -30,7 +43,7 @@ def retrieve_ranked(db: Session, tenant_id: int, question: str) -> list[Retrieve
     top_ranked = ranked[:FINAL_TOP_K]
 
     best_chunk, best_score = top_ranked[0]
-    if best_score < settings.confidence_threshold:
+    if best_score < confidence_threshold:
         return []
 
     return [
