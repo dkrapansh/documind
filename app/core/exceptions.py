@@ -31,3 +31,7 @@ class UnsupportedFileTypeException(AppException):
 class DocumentNotFoundException(AppException):
     status_code = 404
     detail = "Document not found"
+
+class EvalRunNotFoundException(AppException):
+    status_code = 404
+    detail = "Eval run not found"
