@@ -9,9 +9,13 @@ class Settings(BaseSettings):
     rate_limit_requests: int = 60
     rate_limit_window_seconds: int = 60
 
-    openai_api_key: str
+    openai_api_key: str | None = None
     embedding_model: str = "text-embedding-3-small"
     llm_model: str = "gpt-4o-mini"
+
+    gemini_api_key: str
+    gemini_embedding_model: str = "gemini-embedding-001"
+    gemini_llm_model: str = "gemini-3.6-flash"
 
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     # Raw cross-encoder logit, not a probability or a 0-1 score. A quick
