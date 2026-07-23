@@ -6,6 +6,7 @@ from app.repositories.chunks import create_chunks
 from app.repositories.documents import get_by_id, update_status
 from app.services.chunking import chunk_text, count_tokens
 from app.services.file_storage import load_file
+from app.services.query_cache import bump_scope
 from app.services.text_extraction import extract_text
 
 logger = logging.getLogger(__name__)
@@ -24,12 +25,13 @@ def process_document(document_id: int) -> None:
     """
 
     db = SessionLocal()
-    try: 
+    document = None
+    try:
         document = get_by_id(db, document_id)
         if document is None:
             logger.error("process_codument: document %s not found", document_id)
             return
-        
+
         update_status(db, document_id, "processing")
         db.commit()
 
@@ -40,11 +42,12 @@ def process_document(document_id: int) -> None:
         if not raw_chunks:
             update_status(db, document_id, "failed")
             db.commit()
+            bump_scope(document.tenant_id)
             logger.warning(
                 "proess_document: no extractable text for document %s", document_id
             )
             return
-        
+
         chunk_rows = []
         for index, piece in enumerate(raw_chunks):
             embedding = embed_text(piece)
@@ -59,11 +62,14 @@ def process_document(document_id: int) -> None:
         create_chunks(db, document_id, document.tenant_id, chunk_rows)
         update_status(db, document_id, "ready", chunk_count=len(chunk_rows))
         db.commit()
+        bump_scope(document.tenant_id)
 
     except Exception:
         db.rollback()
         logger.exception("process_document failed for document %s", document_id)
         update_status(db, document_id, "failed")
         db.commit()
+        if document is not None:
+            bump_scope(document.tenant_id)
     finally:
         db.close()

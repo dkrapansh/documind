@@ -143,3 +143,74 @@ def test_query_refusal_still_writes_a_query_log_row(client, db_session, monkeypa
     [log] = db_session.query(QueryLog).all()
     assert log.retrieved_chunk_ids == []
     assert log.confidence is None
+
+def test_query_second_identical_call_hits_cache_and_skips_llm(client, monkeypatch):
+    monkeypatch.setattr("app.services.ingestion.embed_text", _fake_embed_text)
+    monkeypatch.setattr("app.services.retrieval.embed_text", _fake_embed_text)
+
+    call_count = {"n": 0}
+    def _fake_generate_answer(messages):
+        call_count["n"] += 1
+        return "Refunds are available within 30 days of purchase."
+    monkeypatch.setattr("app.services.answering.generate_answer", _fake_generate_answer)
+
+    headers = _auth_headers(client)
+
+    file_content = b"Refund Policy: Refunds are available within 30 days of purchase."
+    upload_response = client.post(
+        "/documents",
+        headers=headers,
+        files={"file": ("policy.txt", io.BytesIO(file_content), "text/plain")},
+    )
+    document_id = upload_response.json()["id"]
+    client.get(f"/documents/{document_id}", headers=headers)
+
+    first = client.post(
+        "/query", headers=headers, json={"question": "What is the refund policy?"}
+    )
+    second = client.post(
+        "/query", headers=headers, json={"question": "  WHAT is the refund POLICY?  "}
+    )
+
+    assert first.json()["answer"] == second.json()["answer"]
+    # Only the first call should have reached the LLM - the second is a
+    # cache hit on the normalized question, so the fake must fire once.
+    assert call_count["n"] == 1
+
+    # session_id is per-request and must never leak from whichever call
+    # happened to populate the cache.
+    assert first.json()["session_id"] != second.json()["session_id"]
+
+def test_query_cache_invalidates_when_a_new_document_finishes_ingesting(client, monkeypatch):
+    monkeypatch.setattr("app.services.ingestion.embed_text", _fake_embed_text)
+    monkeypatch.setattr("app.services.retrieval.embed_text", _fake_embed_text)
+
+    headers = _auth_headers(client)
+
+    # No documents uploaded yet -> refusal, which itself gets cached.
+    refusal = client.post(
+        "/query", headers=headers, json={"question": "How long does shipping take?"}
+    )
+    assert refusal.json()["sources"] == []
+
+    # Ingesting a document that answers the question must bump the
+    # tenant's scope version, so the cached refusal is no longer reachable.
+    file_content = b"Shipping Policy: Shipping takes 3-5 business days."
+    upload_response = client.post(
+        "/documents",
+        headers=headers,
+        files={"file": ("shipping.txt", io.BytesIO(file_content), "text/plain")},
+    )
+    document_id = upload_response.json()["id"]
+    client.get(f"/documents/{document_id}", headers=headers)
+
+    monkeypatch.setattr(
+        "app.services.answering.generate_answer",
+        lambda messages: "Shipping takes 3-5 business days.",
+    )
+
+    second = client.post(
+        "/query", headers=headers, json={"question": "How long does shipping take?"}
+    )
+    assert second.json()["sources"] != []
+    assert second.json()["answer"] == "Shipping takes 3-5 business days."

@@ -41,4 +41,10 @@ class Settings(BaseSettings):
     confidence_threshold: float = -3.0
 
     storage_dir: str = "storage"
+
+    # Exact-match query cache (services/query_cache.py). 5 minutes is a
+    # starting guess, not tuned against real traffic like confidence_threshold
+    # was - invalidation on document change is what keeps this safe even if
+    # the TTL is generous.
+    cache_ttl_seconds: int = 300
 settings = Settings()

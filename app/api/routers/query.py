@@ -13,6 +13,7 @@ from app.db.session import SessionLocal
 from app.repositories.query_logs import create_query_log
 from app.schemas.query import QueryRequest, QueryResponse
 from app.services.answering import REFUSAL_ANSWER, answer_question, stream_answer_question
+from app.services.query_cache import get_cached_answer, set_cached_answer
 from app.services.reranking import retrieve_ranked
 
 router = APIRouter(prefix="/query", tags=["query"])
@@ -32,12 +33,28 @@ async def query_documents(
     # individual request.
     session_id = body.session_id or str(uuid.uuid4())
 
-    chunks = retrieve_ranked(db, tenant_id, body.question)
-    if not chunks:
-        response = QueryResponse(question=body.question, answer=REFUSAL_ANSWER, sources=[])
+    # Cache-aside: a hit skips retrieval (embedding + BM25 + rerank) and the
+    # LLM call entirely. Keyed on (tenant, normalized question, doc-scope
+    # version) - see services/query_cache.py for why session_id is never
+    # part of what's cached.
+    cached = get_cached_answer(tenant_id, body.question)
+    if cached is not None:
+        chunks = cached.sources
+        answer = cached.answer
+        confidence = cached.confidence
     else:
-        response = answer_question(body.question, chunks)
-    response.session_id = session_id
+        chunks = retrieve_ranked(db, tenant_id, body.question)
+        if not chunks:
+            answer = REFUSAL_ANSWER
+            confidence = None
+        else:
+            answer = answer_question(body.question, chunks).answer
+            confidence = chunks[0].confidence
+        set_cached_answer(tenant_id, body.question, answer, chunks, confidence)
+
+    response = QueryResponse(
+        question=body.question, answer=answer, sources=chunks, session_id=session_id
+    )
 
     create_query_log(
         db,
@@ -45,8 +62,8 @@ async def query_documents(
         session_id=session_id,
         question=body.question,
         retrieved_chunk_ids=[chunk.id for chunk in chunks],
-        answer=response.answer,
-        confidence=chunks[0].confidence if chunks else None,
+        answer=answer,
+        confidence=confidence,
         latency_ms=int((time.perf_counter() - started_at) * 1000),
         correlation_id=request.state.correlation_id,
     )
