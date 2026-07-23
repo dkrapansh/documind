@@ -48,7 +48,7 @@ def extract_text(file_bytes: bytes, fileame: str) -> str:
             for table in doc.tables
             for row in table.rows
             for cell in row.cells
-            if cell.text.sstrip()
+            if cell.text.strip()
         ]
         return "\n\n".join(paragraphs + table_cells)
     
