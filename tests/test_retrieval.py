@@ -97,6 +97,45 @@ def test_hybrid_pipeline_surfaces_keyword_match_that_dense_alone_misses(client, 
     hybrid_results = retrieve_ranked(db_session, tenant_id, question)
     assert keyword_match.text in [chunk.text for chunk in hybrid_results]
 
+def test_retrieve_never_returns_another_tenants_chunks(client, db_session, monkeypatch):
+    """The core multi-tenancy invariant (CLAUDE.md: "every query filters on
+    tenant_id inside the SQL itself"), exercised directly: tenant B's chunk
+    embeds identically to tenant A's query and would be the closest match by
+    distance alone - the only thing that can keep it out of tenant A's
+    results is the tenant_id filter in repositories/chunks.py, not luck."""
+    tenant_a_id = client.post("/auth/keys", json={"tenant_name": "acme"}).json()["tenant_id"]
+    tenant_b_id = client.post("/auth/keys", json={"tenant_name": "globex"}).json()["tenant_id"]
+
+    document_a = create_document(db_session, tenant_a_id, "a.txt", "hash-a")
+    document_b = create_document(db_session, tenant_b_id, "b.txt", "hash-b")
+
+    chunk_a = Chunk(
+        document_id=document_a.id,
+        tenant_id=tenant_a_id,
+        chunk_index=0,
+        text="tenant A's own chunk",
+        embedding=_make_embedding(0),
+        token_count=4,
+    )
+    # Same embedding as the query below - would win on distance alone if
+    # the tenant filter weren't applied.
+    chunk_b = Chunk(
+        document_id=document_b.id,
+        tenant_id=tenant_b_id,
+        chunk_index=0,
+        text="tenant B's secret chunk",
+        embedding=_make_embedding(0),
+        token_count=4,
+    )
+    db_session.add_all([chunk_a, chunk_b])
+    db_session.commit()
+
+    monkeypatch.setattr("app.services.retrieval.embed_text", lambda q: _make_embedding(0))
+
+    results = retrieve(db_session, tenant_a_id, "irrelevant question text", top_k=5)
+
+    assert [chunk.text for chunk in results] == ["tenant A's own chunk"]
+
 def test_retrieve_ranked_refuses_when_no_chunk_is_actually_relevant(client, db_session, monkeypatch):
     issue_response = client.post("/auth/keys", json={"tenant_name": "acme"})
     tenant_id = issue_response.json()["tenant_id"]

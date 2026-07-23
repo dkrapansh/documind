@@ -2,8 +2,8 @@ import io
 
 from app.models.query_log import QueryLog
 
-def _auth_headers(client) -> dict:
-    response = client.post("/auth/keys", json={"tenant_name": "acme"})
+def _auth_headers(client, tenant_name: str = "acme") -> dict:
+    response = client.post("/auth/keys", json={"tenant_name": tenant_name})
     raw_key = response.json()["api_key"]
     return {"X-API-Key": raw_key}
 
@@ -214,3 +214,38 @@ def test_query_cache_invalidates_when_a_new_document_finishes_ingesting(client, 
     )
     assert second.json()["sources"] != []
     assert second.json()["answer"] == "Shipping takes 3-5 business days."
+
+def test_query_cache_is_isolated_per_tenant(client, monkeypatch):
+    monkeypatch.setattr("app.services.ingestion.embed_text", _fake_embed_text)
+    monkeypatch.setattr("app.services.retrieval.embed_text", _fake_embed_text)
+
+    call_count = {"n": 0}
+    def _fake_generate_answer(messages):
+        call_count["n"] += 1
+        return "Refunds are available within 30 days of purchase."
+    monkeypatch.setattr("app.services.answering.generate_answer", _fake_generate_answer)
+
+    owner_headers = _auth_headers(client, "acme")
+    other_headers = _auth_headers(client, "globex")
+
+    file_content = b"Refund Policy: Refunds are available within 30 days of purchase."
+    upload_response = client.post(
+        "/documents",
+        headers=owner_headers,
+        files={"file": ("policy.txt", io.BytesIO(file_content), "text/plain")},
+    )
+    document_id = upload_response.json()["id"]
+    client.get(f"/documents/{document_id}", headers=owner_headers)
+
+    client.post(
+        "/query", headers=owner_headers, json={"question": "What is the refund policy?"}
+    )
+    # globex has no documents at all - the identical normalized question
+    # must not reuse acme's cache entry (tenant_id is part of the key), or
+    # a refusal would wrongly turn into a leaked cross-tenant answer.
+    other_response = client.post(
+        "/query", headers=other_headers, json={"question": "What is the refund policy?"}
+    )
+
+    assert other_response.json()["sources"] == []
+    assert call_count["n"] == 1  # only acme's query ever reached the LLM
