@@ -6,12 +6,6 @@ from pathlib import Path
 
 os.environ.setdefault("RAGAS_DO_NOT_TRACK", "true")
 
-from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
-from ragas import EvaluationDataset, evaluate
-from ragas.embeddings import LangchainEmbeddingsWrapper
-from ragas.llms import LangchainLLMWrapper
-from ragas.metrics import AnswerRelevancy, context_precision, faithfulness
-from ragas.run_config import RunConfig
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -33,25 +27,6 @@ _EVAL_DIR = Path(__file__).resolve().parent.parent.parent / "eval"
 GOLDEN_DATASET_PATH = _EVAL_DIR / "golden_dataset.json"
 GOLDEN_CORPUS_DIR = _EVAL_DIR / "golden_corpus"
 
-# Free-tier Gemini rate limits are tight (~10 RPM for flash-tier models).
-# A live 2-item probe at max_workers=2 still hit 2 job timeouts and took
-# 9 minutes - concurrent workers compound rate-limit pressure instead of
-# avoiding it. Fully serial (max_workers=1) plus a max_wait just past the
-# 60s free-tier window, and a per-job timeout generous enough to survive
-# several such waits, trades speed for actually finishing a 30-item run.
-_RUN_CONFIG = RunConfig(max_workers=1, max_wait=65, max_retries=6, timeout=400)
-
-# Ragas's default AnswerRelevancy asks the judge LLM for 3 candidate
-# questions in a single call (strictness=3), which needs the API's
-# multi-candidate (candidate_count>1) support. A live baseline run showed
-# gemini-3.5-flash-lite hard-rejects that ("Multiple candidates is not
-# enabled for this model", 400 INVALID_ARGUMENT) on every single item -
-# not a rate limit, a real capability gap - silently turning every
-# answer_relevancy score into None. strictness=1 asks one question per
-# call instead, at the cost of some of the metric's self-consistency
-# averaging.
-answer_relevancy = AnswerRelevancy(strictness=1)
-
 # Free-tier generate_content is capped at 15 requests/minute for
 # gemini-3.5-flash-lite. Waiting until a 429 happens and then retrying
 # (clients/llm.py) works but wastes most of its backoff budget on a
@@ -60,6 +35,21 @@ answer_relevancy = AnswerRelevancy(strictness=1)
 # 4s/request ceiling 15 RPM implies, keeps this loop from ever tripping
 # the limit in the first place instead of only recovering after the fact.
 _ITEM_PACING_SECONDS = 5
+
+
+def evaluate(**kwargs):
+    """Thin lazy wrapper around ragas.evaluate(). `ragas` drags in the
+    whole langchain/langgraph/datasets/pyarrow dependency tree - loading
+    it at module import time meant every process boot (even one that
+    never runs an eval) paid that memory cost, which is what OOM-killed
+    the Render free-tier deploy before it could bind a port. Deferring
+    the import to first real call keeps a plain /query-serving process
+    lightweight. Kept as a named module-level function (not inlined at
+    the call site) so tests can still monkeypatch
+    app.services.evaluation.evaluate directly, same as before.
+    """
+    from ragas import evaluate as _ragas_evaluate
+    return _ragas_evaluate(**kwargs)
 
 
 def _clean_score(value: float | None) -> float | None:
@@ -114,7 +104,10 @@ def load_golden_dataset() -> dict:
     return json.loads(GOLDEN_DATASET_PATH.read_text(encoding="utf-8"))
 
 
-def _build_ragas_llm() -> LangchainLLMWrapper:
+def _build_ragas_llm():
+    from langchain_google_genai import ChatGoogleGenerativeAI
+    from ragas.llms import LangchainLLMWrapper
+
     return LangchainLLMWrapper(ChatGoogleGenerativeAI(
         model=settings.gemini_llm_model,
         google_api_key=settings.gemini_api_key,
@@ -122,7 +115,10 @@ def _build_ragas_llm() -> LangchainLLMWrapper:
     ))
 
 
-def _build_ragas_embeddings() -> LangchainEmbeddingsWrapper:
+def _build_ragas_embeddings():
+    from langchain_google_genai import GoogleGenerativeAIEmbeddings
+    from ragas.embeddings import LangchainEmbeddingsWrapper
+
     return LangchainEmbeddingsWrapper(GoogleGenerativeAIEmbeddings(
         model=f"models/{settings.gemini_embedding_model}",
         google_api_key=settings.gemini_api_key,
@@ -220,6 +216,30 @@ def execute_eval_run(
     scores_by_index: dict[int, dict] = {}
 
     if scorable_indices:
+        from ragas import EvaluationDataset
+        from ragas.metrics import AnswerRelevancy, context_precision, faithfulness
+        from ragas.run_config import RunConfig
+
+        # Ragas's default AnswerRelevancy asks the judge LLM for 3 candidate
+        # questions in a single call (strictness=3), which needs the API's
+        # multi-candidate (candidate_count>1) support. A live baseline run
+        # showed gemini-3.5-flash-lite hard-rejects that ("Multiple
+        # candidates is not enabled for this model", 400 INVALID_ARGUMENT)
+        # on every single item - not a rate limit, a real capability gap -
+        # silently turning every answer_relevancy score into None.
+        # strictness=1 asks one question per call instead, at the cost of
+        # some of the metric's self-consistency averaging.
+        answer_relevancy_metric = AnswerRelevancy(strictness=1)
+
+        # Free-tier Gemini rate limits are tight (~10 RPM for flash-tier
+        # models). A live 2-item probe at max_workers=2 still hit 2 job
+        # timeouts and took 9 minutes - concurrent workers compound
+        # rate-limit pressure instead of avoiding it. Fully serial
+        # (max_workers=1) plus a max_wait just past the 60s free-tier
+        # window, and a per-job timeout generous enough to survive several
+        # such waits, trades speed for actually finishing a 30-item run.
+        run_config = RunConfig(max_workers=1, max_wait=65, max_retries=6, timeout=400)
+
         ragas_dataset = EvaluationDataset.from_list([
             {
                 "user_input": samples[i]["question"],
@@ -231,10 +251,10 @@ def execute_eval_run(
         ])
         result = evaluate(
             dataset=ragas_dataset,
-            metrics=[faithfulness, answer_relevancy, context_precision],
+            metrics=[faithfulness, answer_relevancy_metric, context_precision],
             llm=_build_ragas_llm(),
             embeddings=_build_ragas_embeddings(),
-            run_config=_RUN_CONFIG,
+            run_config=run_config,
         )
         for position, sample_index in enumerate(scorable_indices):
             scores_by_index[sample_index] = result.scores[position]
