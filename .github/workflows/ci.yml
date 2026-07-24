@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: documind
+          POSTGRES_PASSWORD: documind
+          POSTGRES_DB: documind_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql+psycopg://documind:documind@localhost:5432/documind_test
+      GEMINI_API_KEY: ci-placeholder-key
+      OPENAI_API_KEY: ci-placeholder-key
+      APP_ENV: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Enable pgvector extension
+        env:
+          PGPASSWORD: documind
+        run: psql -h localhost -p 5432 -U documind -d documind_test -c "CREATE EXTENSION IF NOT EXISTS vector"
+
+      - name: Run test suite
+        run: pytest -v -m "not live_api"
