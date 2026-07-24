@@ -5,7 +5,6 @@ services:
     plan: free
     dockerfilePath: ./Dockerfile
     healthCheckPath: /health
-    preDeployCommand: alembic upgrade head
     envVars:
       - key: DATABASE_URL
         sync: false
