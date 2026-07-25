@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     # minute, same key) - worth remembering next time this one runs dry.
     gemini_llm_model: str = "gemini-3.1-flash-lite"
 
-    reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    reranker_model: str = "ms-marco-MiniLM-L-12-v2"
     # Raw cross-encoder logit, not a probability or a 0-1 score. Originally
     # -6.0, from a five-example manual probe (exact match ~+5.6, correct
     # paraphrase ~-2.4, irrelevant ~-11; 0.0 wrongly refused the
@@ -38,7 +38,15 @@ class Settings(BaseSettings):
     # faithfulness (1.0), answer_relevancy (0.83), and context_precision
     # (0.79) on the 24 answerable items completely unchanged between the
     # two runs (see eval/RESULTS.md for the full before/after).
-    confidence_threshold: float = -3.0
+    # Retuned for the flashrank swap (see eval/RESULTS.md): flashrank's
+    # scores are sigmoid/softmax [0, 1], not the old CrossEncoder's raw
+    # logits, so the old -3.0 became a no-op. A local probe of real
+    # reranked scores across the 30-item golden dataset (no LLM calls)
+    # found a clean gap - all 6 expected_refusal items scored <=0.405,
+    # all 24 answerable items scored >=0.909 - so 0.7 sits centered in
+    # that gap with margin on both sides. Confirmed via a real eval
+    # harness run against the full retrieve+answer+RAGAS pipeline.
+    confidence_threshold: float = 0.7
 
     storage_dir: str = "storage"
 
