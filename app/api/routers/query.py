@@ -81,14 +81,11 @@ def _log_streamed_query(
     started_at: float,
     correlation_id: str,
 ) -> None:
-    """Runs as a StreamingResponse `background` task - i.e. only after
-    the whole SSE body has finished sending, so accumulated_answer (the
-    same list object event_stream() appended each delta to) is guaranteed
-    fully populated and latency can be measured end-to-end, by this
-    point. Opens its OWN session, same reasoning as
-    services/ingestion.py's process_document: the request's own
-    Depends(get_db) session is torn down once the response starts
-    streaming, well before this runs.
+    """Runs as a StreamingResponse `background` task, after the SSE body
+    finishes sending, so accumulated_answer is fully populated and
+    latency can be measured end-to-end. Opens its own session, same as
+    ingestion.py's process_document: the request's own session is torn
+    down once streaming starts, well before this runs.
     """
     db = SessionLocal()
     try:
@@ -114,15 +111,13 @@ async def query_documents_stream(
     db: Session = Depends(get_db),
     session_id: str | None = None,
 ):
-    """SSE variant of POST /query: retrieval happens up front exactly like
-    the non-streaming path (it's already fast and doesn't benefit from
-    streaming), but the answer is forwarded to the client token-by-token
-    as Gemini generates it, instead of waiting for the complete answer.
+    """SSE variant of POST /query: retrieval happens up front like the
+    non-streaming path, but the answer streams to the client token by
+    token as Gemini generates it.
 
-    A GET (not POST) endpoint is deliberate, not a REST-purity choice:
-    the browser's native EventSource API - the standard SSE client - can
-    only ever issue GET requests with no custom body, so params travel as
-    a query string instead of a JSON body like QueryRequest.
+    GET instead of POST is deliberate: the browser's native EventSource
+    API can only issue GET with no body, so params travel as a query
+    string instead of a JSON body.
     """
     tenant_id = request.state.tenant_id
     correlation_id = request.state.correlation_id

@@ -27,26 +27,20 @@ _EVAL_DIR = Path(__file__).resolve().parent.parent.parent / "eval"
 GOLDEN_DATASET_PATH = _EVAL_DIR / "golden_dataset.json"
 GOLDEN_CORPUS_DIR = _EVAL_DIR / "golden_corpus"
 
-# Free-tier generate_content is capped at 15 requests/minute for
-# gemini-3.5-flash-lite. Waiting until a 429 happens and then retrying
-# (clients/llm.py) works but wastes most of its backoff budget on a
-# congestion that a little upfront pacing avoids: one production
-# generate_answer call per golden item, spaced comfortably under the
-# 4s/request ceiling 15 RPM implies, keeps this loop from ever tripping
-# the limit in the first place instead of only recovering after the fact.
+# Free tier caps generate_content at 15 requests/minute. Reactive
+# retry-after-429 works but wastes backoff budget on congestion that's
+# avoidable, so this paces one call per item, comfortably under the
+# 4s/request ceiling 15 RPM implies, instead of only recovering after
+# the fact.
 _ITEM_PACING_SECONDS = 5
 
 
 def evaluate(**kwargs):
-    """Thin lazy wrapper around ragas.evaluate(). `ragas` drags in the
-    whole langchain/langgraph/datasets/pyarrow dependency tree - loading
-    it at module import time meant every process boot (even one that
-    never runs an eval) paid that memory cost, which is what OOM-killed
-    the Render free-tier deploy before it could bind a port. Deferring
-    the import to first real call keeps a plain /query-serving process
-    lightweight. Kept as a named module-level function (not inlined at
-    the call site) so tests can still monkeypatch
-    app.services.evaluation.evaluate directly, same as before.
+    """Thin lazy wrapper around ragas.evaluate(). Importing ragas at
+    module level drags in langchain/langgraph/datasets/pyarrow and was
+    part of what OOM-killed the free-tier deploy on every boot, even
+    for a plain /query request. Kept as a named function, not inlined,
+    so tests can still monkeypatch this directly.
     """
     from ragas import evaluate as _ragas_evaluate
     return _ragas_evaluate(**kwargs)
@@ -64,12 +58,10 @@ def _clean_score(value: float | None) -> float | None:
 
 def _ensure_eval_tenant(db: Session) -> int:
     """Get-or-create the one stable tenant the eval harness always runs
-    against. Deliberately does not rely on the shared create_tenant()
-    repository function's own semantics for this - that function always
-    inserts a new row (see CLAUDE.md's flagged "no get-or-create" bug) -
-    because the eval harness specifically needs the SAME tenant_id across
-    runs so content-hash document dedup (documents.py) keeps the golden
-    corpus from being re-ingested and re-embedded every run.
+    against. Doesn't use create_tenant() directly since that always
+    inserts a new row (a known bug), and this needs the SAME tenant_id
+    across runs so content-hash dedup skips re-ingesting the golden
+    corpus every time.
     """
     tenant = get_by_name(db, EVAL_TENANT_NAME)
     if tenant is not None:
@@ -78,11 +70,10 @@ def _ensure_eval_tenant(db: Session) -> int:
 
 
 def _ensure_golden_corpus_ingested(db: Session, tenant_id: int) -> None:
-    """Ingest every eval/golden_corpus/*.txt file through the REAL upload
-    pipeline (save_file -> create_document -> process_document) rather
-    than a shortcut, so eval measures the exact chunking/embedding path
-    production uploads go through. Content-hash dedup makes every run
-    after the first a no-op here.
+    """Ingest every eval/golden_corpus/*.txt file through the real
+    upload pipeline (save_file -> create_document -> process_document),
+    not a shortcut, so eval measures the exact path production uploads
+    go through. Content-hash dedup makes reruns a no-op.
     """
     for path in sorted(GOLDEN_CORPUS_DIR.glob("*.txt")):
         file_bytes = path.read_bytes()
@@ -130,11 +121,10 @@ def start_eval_run(
     requesting_tenant_id: int,
     confidence_threshold_override: float | None = None,
 ) -> EvalRun:
-    """The fast, synchronous half of an eval run: just creates the EvalRun
-    row so a caller (routers/eval.py's POST handler) gets an id back
-    immediately, before the slow part (execute_eval_run - real retrieval,
-    real generation, real RAGAS scoring, likely minutes to tens of
-    minutes on Gemini's free tier) has done any work.
+    """The fast half of an eval run: creates the EvalRun row so the
+    caller gets an id back immediately, before execute_eval_run's real
+    retrieval, generation, and RAGAS scoring (minutes on Gemini's free
+    tier) does any work.
     """
     dataset = load_golden_dataset()
     config = {
@@ -159,25 +149,20 @@ def execute_eval_run(
     eval_run: EvalRun,
     confidence_threshold_override: float | None = None,
 ) -> None:
-    """Run every eval/golden_dataset.json item through the REAL retrieval +
-    answering pipeline (retrieve_ranked + answer_question - the exact
-    functions POST /query calls, not a reimplementation), score each
-    non-refusal item with RAGAS (faithfulness, answer_relevancy,
-    context_precision), and persist one EvalResult per question against
-    the given, already-created eval_run.
+    """Runs every golden_dataset.json item through the real retrieval
+    and answering pipeline (retrieve_ranked + answer_question, the same
+    functions POST /query calls), scores non-refusal items with RAGAS,
+    and persists one EvalResult per question.
 
-    Always runs against a dedicated eval-harness tenant (see
-    _ensure_eval_tenant), never against eval_run.tenant_id's own
-    documents: the golden dataset is a fixed, hand-verified corpus, and
-    scoring it against whatever documents an arbitrary caller happens to
-    have uploaded would make the scores meaningless. eval_run.tenant_id
-    is recorded purely as an audit trail of who triggered the run.
+    Always runs against a dedicated eval-harness tenant, never
+    eval_run.tenant_id's own documents: scoring a fixed golden corpus
+    against an arbitrary caller's uploads would make the scores
+    meaningless. eval_run.tenant_id is recorded only as an audit trail.
 
-    expected_refusal items are still run through the real pipeline (that
-    IS the test - proving refusal fires) but are not scored by RAGAS:
-    faithfulness/answer_relevancy/context_precision are undefined for an
-    answer with no supporting context, so their EvalResult rows store
-    None for all three metrics rather than a misleading number.
+    expected_refusal items still run through the real pipeline (proving
+    refusal fires) but aren't scored: faithfulness/relevancy/precision
+    are undefined with no supporting context, so those rows store None
+    instead of a misleading number.
     """
     eval_tenant_id = _ensure_eval_tenant(db)
     _ensure_golden_corpus_ingested(db, eval_tenant_id)
@@ -220,24 +205,18 @@ def execute_eval_run(
         from ragas.metrics import AnswerRelevancy, context_precision, faithfulness
         from ragas.run_config import RunConfig
 
-        # Ragas's default AnswerRelevancy asks the judge LLM for 3 candidate
-        # questions in a single call (strictness=3), which needs the API's
-        # multi-candidate (candidate_count>1) support. A live baseline run
-        # showed gemini-3.5-flash-lite hard-rejects that ("Multiple
-        # candidates is not enabled for this model", 400 INVALID_ARGUMENT)
-        # on every single item - not a rate limit, a real capability gap -
-        # silently turning every answer_relevancy score into None.
-        # strictness=1 asks one question per call instead, at the cost of
-        # some of the metric's self-consistency averaging.
+        # Ragas's default AnswerRelevancy(strictness=3) needs multi-candidate
+        # support Gemini free-tier models reject outright ("Multiple
+        # candidates is not enabled for this model"), silently turning
+        # every score into None. strictness=1 asks one question per call
+        # instead, at some cost to the metric's self-consistency averaging.
         answer_relevancy_metric = AnswerRelevancy(strictness=1)
 
-        # Free-tier Gemini rate limits are tight (~10 RPM for flash-tier
-        # models). A live 2-item probe at max_workers=2 still hit 2 job
-        # timeouts and took 9 minutes - concurrent workers compound
-        # rate-limit pressure instead of avoiding it. Fully serial
-        # (max_workers=1) plus a max_wait just past the 60s free-tier
-        # window, and a per-job timeout generous enough to survive several
-        # such waits, trades speed for actually finishing a 30-item run.
+        # Gemini free-tier rate limits are tight enough that concurrent
+        # workers compound pressure instead of avoiding it (a 2-worker
+        # probe still hit timeouts). Serial (max_workers=1), a max_wait
+        # just past the 60s window, and a generous per-job timeout trade
+        # speed for actually finishing a 30-item run.
         run_config = RunConfig(max_workers=1, max_wait=65, max_retries=6, timeout=400)
 
         ragas_dataset = EvaluationDataset.from_list([
@@ -284,11 +263,10 @@ def run_evaluation(
     requesting_tenant_id: int,
     confidence_threshold_override: float | None = None,
 ) -> EvalRun:
-    """Synchronous entry point for eval/run_eval.py (the CLI script):
-    create the run and execute it in one blocking call, which is exactly
-    what you want from a command you're sitting and watching finish -
-    unlike routers/eval.py's HTTP endpoint, which must return immediately
-    and let a BackgroundTask fill in results (see run_eval_in_background).
+    """Synchronous entry point for eval/run_eval.py: create and execute
+    the run in one blocking call, since a CLI script you're watching
+    finish doesn't need the return-immediately pattern the HTTP endpoint
+    does (see run_eval_in_background).
     """
     eval_run = start_eval_run(db, requesting_tenant_id, confidence_threshold_override)
     execute_eval_run(db, eval_run, confidence_threshold_override)
@@ -296,11 +274,10 @@ def run_evaluation(
 
 
 def run_eval_in_background(eval_run_id: int, confidence_threshold_override: float | None) -> None:
-    """Entry point for FastAPI BackgroundTasks (routers/eval.py). Runs in
-    its OWN database session, same reasoning as services/ingestion.py's
-    process_document: BackgroundTasks executes after the HTTP response
-    has already been sent, so the request's own session (from
-    Depends(get_db)) is already closed by then.
+    """Entry point for FastAPI BackgroundTasks. Runs in its own DB
+    session, same as ingestion.py's process_document: BackgroundTasks
+    runs after the response is sent, so the request's own session is
+    already closed by then.
     """
     db = SessionLocal()
     try:

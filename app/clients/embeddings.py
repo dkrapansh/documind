@@ -17,13 +17,11 @@ def embed_text(text: str) -> list[float]:
     """Turn a string into a 1536-dim embedding vector via Gemini.
 
     output_dimensionality=1536 is pinned explicitly: gemini-embedding-001
-    defaults to 3072 dims, which would not fit the existing
+    defaults to 3072 dims, which wouldn't fit the existing
     chunks.embedding Vector(1536) column.
 
-    Retries up to 8 times with exponential backoff (2s, 4s, 8s, 16s, then
-    30s capped) on transient failures - recalibrated alongside
-    clients/llm.py, twice, against real Gemini free-tier 429s (see that
-    module's docstring for the two incidents that drove each bump).
+    Retries up to 8 times with backoff (2s-30s), tuned the same way
+    and for the same reasons as clients/llm.py (see there for details).
     """
     response = _client.models.embed_content(
         model=settings.gemini_embedding_model,

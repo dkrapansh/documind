@@ -18,19 +18,17 @@ def retrieve_ranked(
     RRF-fused candidates from dense + BM25 (hybrid_retrieval.py), cross-
     encoder reranked (clients/reranker.py), cut to the final top_k.
 
-    Returns an empty list - a refusal signal, not an error - when there
-    are no candidates at all, or when even the best-reranked candidate
-    scores below the confidence threshold. Refusing here, before
-    ever calling the LLM, is a deliberate second line of defense beyond
-    the system prompt's "say so if insufficient" instruction: it's
-    deterministic (doesn't depend on the model choosing to comply) and
-    it skips a paid LLM call entirely when we already know the context
-    is weak.
+    Returns an empty list, a refusal signal, when there are no
+    candidates at all or the best-reranked candidate scores below the
+    confidence threshold. Refusing here, before the LLM is ever
+    called, is deterministic (unlike relying on the system prompt
+    alone) and skips a paid LLM call when the context is already
+    known to be weak.
 
-    confidence_threshold defaults to settings.confidence_threshold, but
-    can be overridden per-call - the eval harness (services/evaluation.py)
-    uses this to re-run the golden set against a candidate threshold
-    without mutating global settings.
+    confidence_threshold defaults to settings.confidence_threshold but
+    can be overridden per-call: the eval harness uses this to re-run
+    the golden set against a candidate threshold without mutating
+    settings.
     """
     if confidence_threshold is None:
         confidence_threshold = settings.confidence_threshold

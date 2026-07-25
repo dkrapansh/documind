@@ -18,18 +18,14 @@ _CHUNK_OVERLAP = 60
 _SEPARATORS = ["\n\n", "\n", ". ", " ", ""]
 
 # Hand-rolled port of langchain_text_splitters' RecursiveCharacterTextSplitter
-# (keep_separator=True, is_separator_regex=False - the only combination this
-# project ever used), not a call into that library. langchain_text_splitters
-# .base unconditionally does `try: from transformers.tokenization_utils_base
-# import ...` at import time to probe for an optional HuggingFace-tokenizer
-# feature this project never uses - and since `transformers`/`torch` ARE
-# installed here (for the cross-encoder reranker), that probe succeeds and
-# eagerly loads the entire torch/transformers stack into every process, just
-# from importing this module. That's what pushed the deployed image's boot
-# memory to the edge of Render free tier's 512MB ceiling, on a request path
-# (document upload/ingestion) that has nothing to do with reranking. Porting
-# the ~40 lines this project actually exercises keeps the exact chunking
-# behavior while removing that dependency entirely.
+# (keep_separator=True, is_separator_regex=False, the only combination
+# used here), not a call into that library. langchain_text_splitters probes
+# for an optional HuggingFace-tokenizer feature at import time, which back
+# when torch/transformers were installed (the old CrossEncoder reranker)
+# eagerly loaded that whole stack on every ingestion request, pushing boot
+# memory toward Render's 512MB ceiling. Porting the ~40 lines actually used
+# here avoids that dependency, and still does even now that
+# torch/transformers are gone entirely.
 
 def _split_with_separator(text: str, separator: str) -> list[str]:
     """Split on `separator`, keeping it attached to the start of whatever
@@ -108,11 +104,10 @@ def _recursive_split(text: str, separators: list[str]) -> list[str]:
     return final_chunks
 
 def chunk_text(text: str) -> list[str]:
-    """Split raw document text into ~500-token chunks with ~60-token overlap.
-    Splits on the most natural boundary available (paragraph, then line,
-    then sentence, then word, then character) so chunks stay aligned with
-    real units of meaning rather than cutting mid-sentence wherever
-    possible.
+    """Split raw document text into ~500-token chunks with ~60-token
+    overlap, on the most natural boundary available (paragraph, line,
+    sentence, word, character) so chunks align with real units of
+    meaning rather than cutting mid-sentence.
     """
     if not text.strip():
         return []

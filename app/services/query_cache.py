@@ -29,11 +29,10 @@ class _CacheEntry:
     expires_at: float
 
 
-# Module-level state: this is an in-process cache, one copy per running app
-# instance, gone on restart - matches the "exact-match, no external cache
-# store" decision in CLAUDE.md. A lock guards both dicts because FastAPI runs
-# sync route handlers in a threadpool, so concurrent requests can hit these
-# at the same time; a plain dict's check-then-set is not atomic.
+# In-process cache, one copy per app instance, gone on restart. A lock
+# guards both dicts since FastAPI runs sync handlers in a threadpool,
+# so concurrent requests can hit these together; a plain dict's
+# check-then-set isn't atomic.
 _lock = threading.Lock()
 _entries: dict[tuple[int, str, int], _CacheEntry] = {}
 _scope_versions: dict[int, int] = {}
@@ -45,11 +44,10 @@ def _make_key(tenant_id: int, question: str) -> tuple[int, str, int]:
 
 
 def get_cached_answer(tenant_id: int, question: str) -> CachedAnswer | None:
-    """Cache-aside read. Returns None on any kind of miss - never cached,
-    expired past cache_ttl_seconds, or the tenant's document set changed
-    since this was cached (see bump_scope) - and the caller falls through to
-    the real retrieval + answering pipeline exactly as if there were no
-    cache at all."""
+    """Cache-aside read. Returns None on any miss (never cached, expired,
+    or the tenant's document set changed since caching, see bump_scope),
+    and the caller falls through to the real pipeline as if there were
+    no cache."""
     key = _make_key(tenant_id, question)
     with _lock:
         entry = _entries.get(key)
@@ -82,15 +80,13 @@ def set_cached_answer(
 
 
 def bump_scope(tenant_id: int) -> None:
-    """Invalidates every cached answer for this tenant in O(1) by advancing
-    its document-scope version, rather than scanning the cache for matching
-    entries to delete. Existing entries were keyed with the old version, so
-    they simply become unreachable and age out later via TTL.
+    """Invalidates every cached answer for a tenant in O(1) by advancing
+    its document-scope version rather than scanning for matching
+    entries: old entries are keyed to the old version, so they go
+    unreachable and age out via TTL.
 
-    Call this whenever the tenant's ready-document set changes (a document
-    finishes ingesting, successfully or not) - previously cached answers may
-    now be missing information a new document would have supplied, or a
-    previous refusal may now be answerable.
+    Call whenever the tenant's ready-document set changes, since a
+    previously cached answer or refusal may no longer be correct.
     """
     with _lock:
         _scope_versions[tenant_id] = _scope_versions.get(tenant_id, 0) + 1

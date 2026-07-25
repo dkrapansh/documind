@@ -1,6 +1,6 @@
 from app.config import settings
 from app.db.base import Base
-import app.models  # noqa: F401  — ensures all models are registered
+import app.models  # noqa: F401, ensures all models are registered
 
 from logging.config import fileConfig
 

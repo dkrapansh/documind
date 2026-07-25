@@ -30,12 +30,10 @@ def search_by_embedding(
     query_embedding: list[float],
     top_k: int,
 ) -> list[tuple[Chunk, float]]:
-    """Find the top_k chunks whose embeddings are closest (by cosine
-    distance) to the given query embedding, scoped to one tenant.
-
-    Returns (Chunk, distance) pairs — smaller distance means more
-    similar. The HNSW index from Day 11 makes this ORDER BY fast even
-    as the chunks table grows.
+    """Top_k chunks closest by cosine distance to the query embedding,
+    scoped to one tenant. Returns (Chunk, distance) pairs, smaller
+    distance means more similar. HNSW-indexed, so ORDER BY stays fast
+    as the table grows.
     """
     distance = Chunk.embedding.cosine_distance(query_embedding)
     results = (
@@ -48,10 +46,9 @@ def search_by_embedding(
     return [(row[0], row[1]) for row in results]
 
 def list_by_tenant(db: Session, tenant_id: int) -> list[Chunk]:
-    """All chunks for a tenant, unscored. BM25 has no SQL-level index to
-    rank by (unlike the pgvector ANN search above) — it needs the whole
-    corpus in memory to score against, so the repository's job here is
-    just the tenant-scoped fetch; scoring happens in the service layer.
+    """All chunks for a tenant, unscored. BM25 has no SQL-level index,
+    it needs the whole corpus in memory to score, so this just does
+    the tenant-scoped fetch; scoring happens in the service layer.
     """
     return (
         db.query(Chunk)

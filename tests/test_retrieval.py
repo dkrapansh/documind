@@ -47,12 +47,11 @@ def test_retrieve_returns_closest_chunk_first(client, db_session, monkeypatch):
     assert results[0].distance < results[1].distance
 
 def test_hybrid_pipeline_surfaces_keyword_match_that_dense_alone_misses(client, db_session, monkeypatch):
-    """Five distractor chunks all embed identically to the query (dense
-    loves them); the one chunk that actually answers the question embeds
-    far away (dense would never surface it in a top_k=4 cut) but shares
-    exact keywords with the question. Dense-only retrieve() should miss
-    it; the full hybrid+rerank funnel (BM25 + RRF + cross-encoder) should
-    recover it - proving why Days 17-19 exist, not just that they run."""
+    """Five distractor chunks embed identically to the query; the chunk
+    that actually answers the question embeds far away but shares exact
+    keywords with it. Dense-only retrieve() should miss it; the full
+    hybrid+rerank funnel should recover it, proving hybrid search earns
+    its complexity, not just that it runs."""
     issue_response = client.post("/auth/keys", json={"tenant_name": "acme"})
     tenant_id = issue_response.json()["tenant_id"]
 
@@ -98,11 +97,11 @@ def test_hybrid_pipeline_surfaces_keyword_match_that_dense_alone_misses(client, 
     assert keyword_match.text in [chunk.text for chunk in hybrid_results]
 
 def test_retrieve_never_returns_another_tenants_chunks(client, db_session, monkeypatch):
-    """The core multi-tenancy invariant (CLAUDE.md: "every query filters on
-    tenant_id inside the SQL itself"), exercised directly: tenant B's chunk
-    embeds identically to tenant A's query and would be the closest match by
-    distance alone - the only thing that can keep it out of tenant A's
-    results is the tenant_id filter in repositories/chunks.py, not luck."""
+    """The core multi-tenancy invariant, exercised directly: tenant B's
+    chunk embeds identically to tenant A's query and would be the
+    closest match by distance alone. The only thing keeping it out of
+    tenant A's results is the tenant_id filter in repositories/chunks.py,
+    not luck."""
     tenant_a_id = client.post("/auth/keys", json={"tenant_name": "acme"}).json()["tenant_id"]
     tenant_b_id = client.post("/auth/keys", json={"tenant_name": "globex"}).json()["tenant_id"]
 

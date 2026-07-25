@@ -27,15 +27,10 @@ def _split_messages(messages: list[dict]) -> tuple[str, str]:
 def generate_answer(messages: list[dict]) -> str:
     """Run a chat completion over the given messages and return the answer text.
 
-    Retries up to 8 times with exponential backoff (2s, 4s, 8s, 16s, then
-    30s capped) on transient failures — same resilience pattern as
-    clients/embeddings.py, with a longer timeout since a full answer
-    takes longer to generate than a single embedding call. Recalibrated
-    twice against real Gemini free-tier 429s: first from 3 attempts/4s-max
-    (couldn't outlast a single ~23s RetryInfo.retryDelay window at all),
-    then from 5 to 8 attempts after two back-to-back eval harness runs
-    still occasionally exhausted 5 attempts' ~60s total budget when the
-    per-minute window was already under pressure from the prior run.
+    Retries up to 8 times with exponential backoff (2s-30s), same pattern
+    as embeddings.py. Tuned twice against real Gemini free-tier 429s: 3
+    attempts couldn't outlast a single retry window, 5 still ran out
+    under back-to-back eval harness load.
     """
     system_instruction, user_content = _split_messages(messages)
 
@@ -51,17 +46,14 @@ def generate_answer(messages: list[dict]) -> str:
 
 
 def stream_answer(messages: list[dict]) -> Iterator[str]:
-    """Same call as generate_answer, but yields text deltas as they
-    arrive instead of blocking for the full answer - powers GET
-    /query/stream's Server-Sent Events response.
+    """Same call as generate_answer, but yields text deltas as they arrive
+    instead of blocking for the full answer, powering GET /query/stream's
+    SSE response.
 
-    Deliberately has no @retry: once the first chunk has reached the
-    caller (routers/query.py, already forwarding it to an open SSE
-    connection), transparently retrying the whole request from scratch
-    would either duplicate already-streamed text or require buffering
-    everything anyway - defeating the point of streaming. A dropped
-    connection mid-stream surfaces as an exception the SSE endpoint turns
-    into a terminal error event instead.
+    No @retry here on purpose: once the first chunk reaches an open SSE
+    connection, retrying from scratch would duplicate streamed text or
+    require buffering everything anyway. A dropped connection mid-stream
+    surfaces as an exception instead.
     """
     system_instruction, user_content = _split_messages(messages)
 

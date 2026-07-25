@@ -9,12 +9,9 @@ DEFAULT_TOP_K = 4
 def retrieve(
      db: Session, tenant_id: int, question: str, top_k: int = DEFAULT_TOP_K   
 ) -> list[RetrievedChunk]:
-    """Dense-only retrieval (v1): embed the question, find the top_k
-    closest chunks for this tenant by cosine distance.
-
-    No BM25, no fusion, no reranking yet, those will arrive during Days 17-19.
-    This is the narrowest working slice of the retrieval funnel,
-    verified correct before more stages get layered on top.
+    """Dense-only retrieval: embed the question, find the top_k closest
+    chunks for this tenant by cosine distance. The dense leg of hybrid
+    retrieval (hybrid_retrieval.py merges this with BM25 via RRF).
     """
     query_embedding = embed_text(question)
     results = search_by_embedding(db, tenant_id, query_embedding, top_k)

@@ -10,7 +10,7 @@ def _auth_headers(client, tenant_name: str = "acme") -> dict:
 def _fake_embed_text(text: str) -> list[float]:
     """Same stand-in as test_ingestion.py's fake: a single constant vector.
     Ingestion and retrieval both use it, so the one uploaded chunk always
-    comes back as the closest (only) match — no real OpenAI call needed."""
+    comes back as the closest (only) match, no real OpenAI call needed."""
     return [0.1] * 1536
 
 def test_query_end_to_end_returns_grounded_answer_with_sources(client, monkeypatch):

@@ -4,7 +4,7 @@ from app.models.chunk import Chunk
 from app.models.document import Document
 
 def _fake_embed_text(text: str) -> list[float]:
-    """Stand-in for the real OpenAI call — instant, free, deterministic.
+    """Stand-in for the real OpenAI call, instant, free, deterministic.
     Ingestion only needs *a* vector of the right shape to prove the
     pipeline wires together; it doesn't need a real embedding to test
     chunking, DB writes, or status transitions."""
@@ -39,12 +39,9 @@ def test_upload_ingests_document_into_chunks_with_embeddings(client, db_session,
     assert len(chunks[0].embedding) == 1536
 
 def test_upload_docx_extracts_paragraph_and_table_text(client, db_session, monkeypatch):
-    """.docx is one of the 3 supported extensions (services/text_extraction.py)
-    but until now had no test exercising it through the real pipeline - table
-    cell text specifically, which is appended separately from paragraph text
-    and previously crashed process_document (a `cell.text.sstrip()` typo,
-    silently swallowed by ingestion.py's except-Exception into a "failed"
-    status rather than a visible traceback)."""
+    """Covers .docx table cell text, previously untested and broken: a
+    `cell.text.sstrip()` typo crashed process_document, silently
+    swallowed into a "failed" status instead of a visible traceback."""
     monkeypatch.setattr("app.services.ingestion.embed_text", _fake_embed_text)
     headers = _auth_headers(client)
 

@@ -1,11 +1,8 @@
 class AppException(Exception):
-    """Base class for all custom, expected application errors.
-
-    Anything raised from services/repositories that should map to a
-    specific HTTP status code should subclass this, not raise a bare
-    Exception or HTTPException directly. Keeping one hierarchy means
-    every error in the system is either an AppException (expected,
-    mapped) or a genuine bug (unhandled 500).
+    """Base class for expected application errors. Anything mapping to
+    a specific HTTP status should subclass this, not raise a bare
+    Exception or HTTPException, so every error is either an
+    AppException (expected) or a genuine bug (unhandled 500).
     """
 
     status_code: int = 500

@@ -15,12 +15,11 @@ def process_document(document_id: int) -> None:
     """Background job: load the saved file, extract text, chunk it,
     embed every chunk, and store the results.
 
-    Runs in its OWN database session, because BackgroundTasks executes
-    after the HTTP response has already been sent, the request's
-    session (from Depends(get_db)) is already closed by then.
+    Runs in its own DB session since BackgroundTasks runs after the
+    response is sent, when the request's own session is already closed.
 
-    All chunk inserts + the final status update commit together as one
-    transaction: a document ends up fully ready or cleanly failed,
+    Chunk inserts and the final status update commit as one
+    transaction, so a document ends up fully ready or cleanly failed,
     never half-written.
     """
 

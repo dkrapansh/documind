@@ -24,17 +24,13 @@ def bm25_retrieve(
     Dense retrieval (retrieval.py) finds chunks that are semantically
     similar, which can miss exact-term matches (product codes, names,
     rare words) that don't embed distinctively. BM25 scores every chunk
-    for this tenant purely on keyword/term overlap with the question,
+    for this tenant purely on keyword overlap with the question,
     independent of the dense leg.
 
-    A BM25Chunk carries `score` (higher = more relevant), not `distance`
-    (lower = more similar) — the two retrievers use opposite similarity
+    A BM25Chunk carries `score` (higher is more relevant), not
+    `distance` (lower is more similar): the two retrievers use opposite
     directions, so reusing RetrievedChunk here would silently mislead
-    any code that assumes "smaller is better".
-
-    No fusion yet (Reciprocal Rank Fusion arrives on Day 18) and not
-    wired into /query yet — this is the narrowest working slice of the
-    BM25 leg, verified in isolation before merging with dense results.
+    any code that assumes smaller is better.
     """
     chunks = list_by_tenant(db, tenant_id)
     if not chunks:

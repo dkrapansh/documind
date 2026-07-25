@@ -1,11 +1,11 @@
-# Eval harness results — confidence_threshold tuning (Day 26/27)
+# Eval harness results: confidence_threshold tuning (Day 26/27)
 
 Two full runs of `eval/golden_dataset.json` (v2, 30 items: 24 answerable,
 6 `expected_refusal`) through the real retrieval + answering pipeline via
 `eval/run_eval.py`, scored with RAGAS (faithfulness, answer_relevancy,
 context_precision via `gemini-3.1-flash-lite` as judge). Only
 `confidence_threshold` (`app/services/reranking.py`'s `retrieve_ranked`)
-changed between the two runs — same golden set, same models, same
+changed between the two runs, same golden set, same models, same
 retrieval/reranking code.
 
 | | Baseline (eval run 6) | Tuned (eval run 7) |
@@ -21,7 +21,7 @@ retrieval/reranking code.
 **Re-tuning `confidence_threshold` from -6.0 to -3.0 against a 30-item
 golden dataset raised refusal accuracy from 50% to 83% while leaving
 faithfulness (1.0), answer relevancy (0.83), and context precision
-(0.79) on answerable questions completely unchanged** — a real,
+(0.79) on answerable questions completely unchanged**, a real,
 evidence-backed improvement to the system's core safety property (never
 answer from insufficient context) with no measurable cost to answer
 quality, replacing what had been a five-example manual probe with a
