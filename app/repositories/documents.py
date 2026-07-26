@@ -41,6 +41,18 @@ def get_by_id_for_tenant(db: Session, document_id: int, tenant_id: int) -> Docum
         Document.tenant_id == tenant_id,
     ).first()
 
+def delete_for_tenant(db: Session, document_id: int, tenant_id: int) -> bool:
+    """Deletes only the document row. Returns False without deleting
+    anything if it doesn't exist or belongs to another tenant, so
+    callers can 404 correctly. Caller must delete the document's chunks
+    first (chunks.document_id has no ON DELETE CASCADE at the DB level)
+    and commit both in one transaction."""
+    document = get_by_id_for_tenant(db, document_id, tenant_id)
+    if document is None:
+        return False
+    db.delete(document)
+    return True
+
 def list_by_tenant(db: Session, tenant_id: int) -> list[Document]:
     return (
         db.query(Document)

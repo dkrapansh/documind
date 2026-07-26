@@ -15,3 +15,7 @@ def get_by_hashed_key(db: Session, hashed_key: str) -> ApiKey | None:
     return db.query(ApiKey).filter(
         ApiKey.hashed_key == hashed_key, ApiKey.revoked.is_(False)
     ).first()
+
+def revoke(db: Session, api_key_id: int) -> None:
+    db.query(ApiKey).filter(ApiKey.id == api_key_id).update({"revoked": True})
+    db.commit()

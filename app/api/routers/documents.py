@@ -1,12 +1,20 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response, UploadFile
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.api.security_scheme import api_key_header
-from app.repositories.documents import create_document, get_by_content_hash, get_by_id_for_tenant, list_by_tenant
+from app.repositories.chunks import delete_by_document
+from app.repositories.documents import (
+    create_document,
+    delete_for_tenant,
+    get_by_content_hash,
+    get_by_id_for_tenant,
+    list_by_tenant,
+)
 from app.schemas.document import DocumentResponse
 from app.services.file_storage import compute_content_hash, save_file
 from app.services.ingestion import process_document
+from app.services.query_cache import bump_scope
 from app.services.text_extraction import validate_extension
 
 from app.core.exceptions import DocumentNotFoundException
@@ -58,3 +66,19 @@ async def get_document_status(
     if document is None:
         raise DocumentNotFoundException()
     return document
+
+@router.delete("/{document_id}", status_code=204, dependencies=[Depends(api_key_header)])
+async def delete_document(
+    document_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    tenant_id = request.state.tenant_id
+    delete_by_document(db, document_id, tenant_id)
+    deleted = delete_for_tenant(db, document_id, tenant_id)
+    if not deleted:
+        db.rollback()
+        raise DocumentNotFoundException()
+    db.commit()
+    bump_scope(tenant_id)
+    return Response(status_code=204)

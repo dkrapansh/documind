@@ -36,3 +36,23 @@ def test_rate_limit_returns_429_after_limit_exceeded(client, monkeypatch):
     statuses = [client.get("/foo", headers=headers).status_code for _ in range(5)]
 
     assert statuses == [404, 404, 404, 429, 429]
+
+def test_revoke_key_makes_it_stop_authenticating(client):
+    issue_response = client.post("/auth/keys", json={"tenant_name": "acme"})
+    raw_key = issue_response.json()["api_key"]
+    headers = {"X-API-Key": raw_key}
+
+    revoke_response = client.post("/auth/keys/revoke", headers=headers)
+    assert revoke_response.status_code == 204
+
+    response = client.get("/documents", headers=headers)
+    assert response.status_code == 401
+
+def test_revoke_key_only_affects_the_caller_own_key(client):
+    key_a = client.post("/auth/keys", json={"tenant_name": "acme"}).json()["api_key"]
+    key_b = client.post("/auth/keys", json={"tenant_name": "globex"}).json()["api_key"]
+
+    client.post("/auth/keys/revoke", headers={"X-API-Key": key_a})
+
+    assert client.get("/documents", headers={"X-API-Key": key_a}).status_code == 401
+    assert client.get("/documents", headers={"X-API-Key": key_b}).status_code == 200
