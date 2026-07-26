@@ -419,6 +419,13 @@ size, and I'd revisit them before this ran with real production traffic:
 - There's no per-document filter on queries; every query searches a
   tenant's entire ready corpus. That was a deliberate scope decision, not
   an oversight, but it's the first thing I'd add if a real user asked for it.
+- BM25 (`app/services/bm25_retrieval.py`) pulls a tenant's entire chunk set
+  into Python and rebuilds a `BM25Okapi` index on every single query, since
+  `rank-bm25` has no persistent index of its own. Fine at demo scale; at a
+  real tenant size this is the first thing to move into Postgres itself,
+  a `tsvector` column with a GIN index and `ts_rank`, so the sparse leg
+  runs in SQL right alongside the dense leg instead of being rebuilt from
+  scratch per request.
 - `POST /auth/demo-session` rate-limits by IP with the same in-process,
   single-instance counter as the general rate limiter, so it resets on
   every restart and doesn't coordinate across instances. The frontend

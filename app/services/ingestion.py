@@ -28,7 +28,7 @@ def process_document(document_id: int) -> None:
     try:
         document = get_by_id(db, document_id)
         if document is None:
-            logger.error("process_codument: document %s not found", document_id)
+            logger.error("process_document: document %s not found", document_id)
             return
 
         update_status(db, document_id, "processing")
@@ -43,7 +43,7 @@ def process_document(document_id: int) -> None:
             db.commit()
             bump_scope(document.tenant_id)
             logger.warning(
-                "proess_document: no extractable text for document %s", document_id
+                "process_document: no extractable text for document %s", document_id
             )
             return
 

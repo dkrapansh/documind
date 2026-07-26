@@ -9,10 +9,6 @@ class Settings(BaseSettings):
     rate_limit_requests: int = 60
     rate_limit_window_seconds: int = 60
 
-    openai_api_key: str | None = None
-    embedding_model: str = "text-embedding-3-small"
-    llm_model: str = "gpt-4o-mini"
-
     gemini_api_key: str
     gemini_embedding_model: str = "gemini-embedding-001"
     # gemini-3.6-flash's free tier caps at 20 calls/day, not enough for

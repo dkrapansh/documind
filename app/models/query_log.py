@@ -11,7 +11,7 @@ class QueryLog(Base):
     session_id: Mapped[str] = mapped_column(String(100), index=True)
     question: Mapped[str] = mapped_column(String)
     retrieved_chunk_ids: Mapped[list] = mapped_column(JSON, default=list)
-    answer: Mapped[float] = mapped_column(String, nullable=True)
+    answer: Mapped[str | None] = mapped_column(String, nullable=True)
     confidence: Mapped[float] = mapped_column(Float, nullable=True)
     latency_ms: Mapped[int] = mapped_column(Integer, nullable=True)
     correlation_id: Mapped[str] = mapped_column(String(50), nullable=True)

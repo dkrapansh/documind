@@ -20,7 +20,7 @@ class RetrievedChunk(BaseModel):
     distance: float | None = None
     confidence: float | None = None
 
-    model_config = {"from_attrubutes": True}
+    model_config = {"from_attributes": True}
 
 class QueryResponse(BaseModel):
     question: str

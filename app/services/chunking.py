@@ -2,6 +2,11 @@ import re
 
 import tiktoken
 
+# "text-embedding-3-small" is an OpenAI model name, not Gemini - kept
+# intentionally. tiktoken has no encoding for Gemini's tokenizer, and
+# chunk sizing only needs a consistent, fast token-count proxy to size
+# chunks against _CHUNK_SIZE, not an exact match to what Gemini will
+# later re-tokenize; any stable BPE encoding works for that.
 _encoding = tiktoken.encoding_for_model("text-embedding-3-small")
 
 def _count_tokens(text: str) -> int:

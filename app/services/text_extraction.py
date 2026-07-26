@@ -17,7 +17,7 @@ def validate_extension(filename: str) -> None:
         raise UnsupportedFileTypeException(extension)
     
 
-def extract_text(file_bytes: bytes, fileame: str) -> str:
+def extract_text(file_bytes: bytes, filename: str) -> str:
     """Turn a saved file's raw bytes into plain text, based on extension.
     .txt  -> decode as UTF-8 directly.
     .pdf  -> pypdf's text layer. Scanned/image-only PDFs extract as
@@ -27,7 +27,7 @@ def extract_text(file_bytes: bytes, fileame: str) -> str:
              true position, fine since chunking cares about content,
              not reading order.
     """
-    extension = Path(fileame).suffix.lower()
+    extension = Path(filename).suffix.lower()
 
     if extension == ".txt":
         return file_bytes.decode("utf-8")
