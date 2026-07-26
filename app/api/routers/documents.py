@@ -3,7 +3,8 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.api.security_scheme import api_key_header
-from app.core.exceptions import DocumentNotFoundException
+from app.config import settings
+from app.core.exceptions import DocumentNotFoundException, PayloadTooLargeException
 from app.repositories.documents import (
     create_document,
     get_by_content_hash,
@@ -19,6 +20,25 @@ from app.services.text_extraction import validate_extension
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 
+async def _read_bounded(file: UploadFile, max_bytes: int) -> bytes:
+    """Reads in chunks instead of one `await file.read()`, so an
+    oversized file gets rejected mid-stream instead of fully buffered
+    into memory first. The backend is directly reachable (the Vercel
+    proxy's body cap only covers the frontend path), so this is the
+    only guard against a large-upload memory DoS."""
+    chunks = []
+    total = 0
+    while True:
+        chunk = await file.read(1024 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise PayloadTooLargeException(max_bytes)
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 @router.post("", response_model=DocumentResponse, dependencies=[Depends(api_key_header)])
 async def upload_document(
     request: Request,
@@ -30,7 +50,7 @@ async def upload_document(
 
     validate_extension(file.filename)
 
-    file_bytes = await file.read()
+    file_bytes = await _read_bounded(file, settings.max_upload_size_bytes)
     content_hash = compute_content_hash(file_bytes)
 
     existing = get_by_content_hash(db, tenant_id, content_hash)

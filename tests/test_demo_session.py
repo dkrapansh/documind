@@ -79,6 +79,57 @@ def test_demo_session_rate_limited_by_ip(client, monkeypatch):
 
     assert statuses == [200, 200, 429, 429]
 
+def test_demo_session_ignores_forwarded_ip_header_without_the_shared_secret(client, monkeypatch):
+    """A direct caller can set X-Demo-Visitor-IP to anything. Without
+    a matching X-Demo-Proxy-Secret, it must be ignored, or an attacker
+    could claim a fresh IP every call and dodge the limit."""
+    monkeypatch.setattr("app.config.settings.demo_session_rate_limit", 2)
+    monkeypatch.setattr("app.config.settings.demo_proxy_shared_secret", "real-secret")
+
+    headers = {"X-Demo-Visitor-IP": "1.2.3.4"}
+    statuses = [
+        client.post("/auth/demo-session", headers=headers).status_code for _ in range(4)
+    ]
+
+    assert statuses == [200, 200, 429, 429]
+
+def test_demo_session_trusts_forwarded_ip_only_with_the_correct_shared_secret(client, monkeypatch):
+    """With the correct secret, two visitors relayed through the same
+    proxy get separate rate-limit buckets instead of colliding on the
+    proxy's own shared egress IP."""
+    monkeypatch.setattr("app.config.settings.demo_session_rate_limit", 1)
+    monkeypatch.setattr("app.config.settings.demo_proxy_shared_secret", "real-secret")
+
+    visitor_a_headers = {
+        "X-Demo-Proxy-Secret": "real-secret",
+        "X-Demo-Visitor-IP": "1.1.1.1",
+    }
+    visitor_b_headers = {
+        "X-Demo-Proxy-Secret": "real-secret",
+        "X-Demo-Visitor-IP": "2.2.2.2",
+    }
+
+    assert client.post("/auth/demo-session", headers=visitor_a_headers).status_code == 200
+    # Same visitor A again - now over the limit of 1.
+    assert client.post("/auth/demo-session", headers=visitor_a_headers).status_code == 429
+    # Visitor B is a different forwarded IP, so it gets its own bucket.
+    assert client.post("/auth/demo-session", headers=visitor_b_headers).status_code == 200
+
+def test_demo_session_forwarded_ip_rejected_with_wrong_secret(client, monkeypatch):
+    monkeypatch.setattr("app.config.settings.demo_session_rate_limit", 1)
+    monkeypatch.setattr("app.config.settings.demo_proxy_shared_secret", "real-secret")
+
+    headers = {
+        "X-Demo-Proxy-Secret": "wrong-secret",
+        "X-Demo-Visitor-IP": "9.9.9.9",
+    }
+
+    # Both calls fall back to the same raw TCP peer (the wrong secret
+    # means the forwarded IP is never trusted), so the second one hits
+    # the limit rather than getting its own bucket via the forged IP.
+    assert client.post("/auth/demo-session", headers=headers).status_code == 200
+    assert client.post("/auth/demo-session", headers=headers).status_code == 429
+
 def test_sweep_deletes_expired_ephemeral_tenants_on_next_session_creation(
     client, db_session, monkeypatch
 ):

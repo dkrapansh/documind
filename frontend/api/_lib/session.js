@@ -5,6 +5,12 @@ const COOKIE_NAME = "dm_session";
 const BACKEND = process.env.DOCUMIND_API_BASE;
 const SESSION_MAX_AGE_SECONDS = 3600;
 
+// Same value as the backend's DEMO_PROXY_SHARED_SECRET. Lets the
+// backend trust the X-Demo-Visitor-IP header set below instead of
+// rate-limiting every visitor together under this proxy's own egress
+// IP. See auth.py's _client_ip for the other half of this fix.
+const PROXY_SHARED_SECRET = process.env.DOCUMIND_PROXY_SHARED_SECRET;
+
 function parseCookie(cookieHeader, name) {
   if (!cookieHeader) return null;
   const pair = cookieHeader
@@ -12,6 +18,14 @@ function parseCookie(cookieHeader, name) {
     .map((s) => s.trim())
     .find((s) => s.startsWith(`${name}=`));
   return pair ? decodeURIComponent(pair.slice(name.length + 1)) : null;
+}
+
+// Vercel's edge sets this reliably for the browser->proxy hop; the
+// proxy->backend hop is a fresh fetch with no such header otherwise.
+function _visitorIp(req) {
+  const xff = req.headers["x-forwarded-for"];
+  if (xff) return xff.split(",")[0].trim();
+  return req.socket?.remoteAddress ?? "unknown";
 }
 
 /**
@@ -24,7 +38,13 @@ export async function getSessionKey(req) {
   const existing = parseCookie(req.headers.cookie, COOKIE_NAME);
   if (existing) return { key: existing, isNew: false };
 
-  const res = await fetch(`${BACKEND}/auth/demo-session`, { method: "POST" });
+  const headers = {};
+  if (PROXY_SHARED_SECRET) {
+    headers["X-Demo-Proxy-Secret"] = PROXY_SHARED_SECRET;
+    headers["X-Demo-Visitor-IP"] = _visitorIp(req);
+  }
+
+  const res = await fetch(`${BACKEND}/auth/demo-session`, { method: "POST", headers });
   if (!res.ok) {
     throw new Error(`Failed to mint demo session (${res.status})`);
   }

@@ -35,9 +35,21 @@ def revoke_key(request: Request, db: Session = Depends(get_db)):
 _demo_session_counts: dict[str, tuple[float, int]] = defaultdict(lambda: (0.0, 0))
 
 def _client_ip(request: Request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+    """Rate-limit key for the one route that has to stay unauthenticated.
+
+    A direct caller could set X-Forwarded-For to anything, so it's only
+    trusted when paired with demo_proxy_shared_secret, known only to
+    this backend and the proxy (frontend/api/_lib/session.js). No
+    matching secret means fall back to the raw TCP peer address, which
+    can't be forged. This also fixes the old demo-DoS: every proxy
+    visitor used to collide on the proxy's own shared egress IP, so one
+    abuser could exhaust the whole bucket for everyone.
+    """
+    secret = settings.demo_proxy_shared_secret
+    if secret and request.headers.get("X-Demo-Proxy-Secret") == secret:
+        visitor_ip = request.headers.get("X-Demo-Visitor-IP")
+        if visitor_ip:
+            return visitor_ip.strip()
     return request.client.host if request.client else "unknown"
 
 @router.post("/demo-session", response_model=CreateKeyResponse)

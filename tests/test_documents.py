@@ -104,3 +104,29 @@ def test_delete_unknown_document_returns_404(client):
     headers = _auth_headers(client)
     response = client.delete("/documents/999999", headers=headers)
     assert response.status_code == 404
+
+def test_upload_rejects_a_file_over_the_configured_size_cap(client, monkeypatch):
+    monkeypatch.setattr("app.api.routers.documents.settings.max_upload_size_bytes", 10)
+    headers = _auth_headers(client)
+
+    response = client.post(
+        "/documents",
+        headers=headers,
+        files={"file": ("big.txt", io.BytesIO(b"x" * 1000), "text/plain")},
+    )
+
+    assert response.status_code == 413
+    assert "exceeds the maximum allowed size" in response.json()["detail"]
+
+def test_upload_within_the_size_cap_still_succeeds(client, monkeypatch):
+    monkeypatch.setattr("app.services.ingestion.embed_text", _fake_embed_text)
+    monkeypatch.setattr("app.api.routers.documents.settings.max_upload_size_bytes", 1_000_000)
+    headers = _auth_headers(client)
+
+    response = client.post(
+        "/documents",
+        headers=headers,
+        files={"file": ("small.txt", io.BytesIO(b"small content"), "text/plain")},
+    )
+
+    assert response.status_code == 200

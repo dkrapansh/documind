@@ -74,6 +74,7 @@ Copy `.env.example` to `.env` and fill in:
 | Variable | Purpose |
 |---|---|
 | `DOCUMIND_API_BASE` | Base URL of the deployed DocuMind API. **No `VITE_` prefix**: this must stay server-only. Read via `process.env` inside `api/*.js`, never inlined into the client bundle. |
+| `DOCUMIND_PROXY_SHARED_SECRET` | Must match the backend's `DEMO_PROXY_SHARED_SECRET`. Lets the backend's per-IP rate limiter on `POST /auth/demo-session` trust the real visitor IP this proxy forwards, instead of rate-limiting every visitor together under Vercel's own egress IP. Optional for local dev; without it the backend just falls back to its own raw TCP peer address. |
 
 There is no client-side API key anywhere in this project. Don't add one back.
 

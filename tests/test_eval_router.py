@@ -104,3 +104,27 @@ def test_get_unknown_eval_run_returns_404(client):
     headers = _auth_headers(client)
     response = client.get("/eval/runs/999999", headers=headers)
     assert response.status_code == 404
+
+def test_ephemeral_tenant_cannot_start_an_eval_run(tmp_path, client, monkeypatch):
+    """A demo tenant must not be able to trigger a run: it ingests the
+    golden corpus and fires ~30 real Gemini calls, and demo keys are
+    free to mint, so this would let anyone script quota exhaustion."""
+    _write_fake_golden_set(tmp_path, monkeypatch)
+    _mock_pipeline(monkeypatch)
+
+    demo_session = client.post("/auth/demo-session")
+    demo_headers = {"X-API-Key": demo_session.json()["api_key"]}
+
+    response = client.post("/eval/runs", headers=demo_headers, json={})
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Ephemeral demo tenants cannot start evaluation runs"
+
+def test_non_ephemeral_tenant_still_allowed_to_start_an_eval_run(tmp_path, client, monkeypatch):
+    _write_fake_golden_set(tmp_path, monkeypatch)
+    _mock_pipeline(monkeypatch)
+
+    headers = _auth_headers(client)
+    response = client.post("/eval/runs", headers=headers, json={})
+
+    assert response.status_code == 200

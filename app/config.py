@@ -35,6 +35,13 @@ class Settings(BaseSettings):
 
     storage_dir: str = "storage"
 
+    # POST /documents has no framework-level body cap on the backend
+    # itself (the Vercel proxy's 4.5MB request limit only covers the
+    # frontend demo path, not direct callers of the Render API), so this
+    # bounds it server-side. 20MB comfortably covers real handbook-sized
+    # .txt/.pdf/.docx uploads.
+    max_upload_size_bytes: int = 20 * 1024 * 1024
+
     # Exact-match query cache (services/query_cache.py). 5 minutes is a
     # starting guess, not tuned against real traffic like confidence_threshold
     # was - invalidation on document change is what keeps this safe even if
@@ -66,4 +73,11 @@ class Settings(BaseSettings):
     # re-embedding) into every new ephemeral demo tenant - see
     # services/demo_seed.py.
     seed_tenant_name: str = "demo"
+
+    # Shared secret with frontend/api/ (Vercel), same value as its
+    # DOCUMIND_PROXY_SHARED_SECRET. Lets auth.py's _client_ip trust a
+    # forwarded visitor IP only when it really came through the proxy,
+    # since a direct caller could set that header to anything. None
+    # (local dev default) means it's never trusted.
+    demo_proxy_shared_secret: str | None = None
 settings = Settings()

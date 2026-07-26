@@ -3,8 +3,9 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.api.security_scheme import api_key_header
-from app.core.exceptions import EvalRunNotFoundException
+from app.core.exceptions import EphemeralTenantForbiddenException, EvalRunNotFoundException
 from app.repositories.eval_runs import get_eval_run_for_tenant, list_eval_results
+from app.repositories.tenants import get_by_id as get_tenant_by_id
 from app.schemas.eval import EvalRunRequest, EvalRunResponse
 from app.services.evaluation import run_eval_in_background, start_eval_run
 
@@ -18,6 +19,14 @@ def create_eval_run_endpoint(
     db: Session = Depends(get_db),
 ):
     tenant_id = request.state.tenant_id
+
+    # Demo tenants are minted with no auth (anyone can script
+    # POST /auth/demo-session), so letting them trigger a run too would
+    # let an anonymous caller burn the shared Gemini quota and spin up
+    # unbounded background RAGAS jobs.
+    tenant = get_tenant_by_id(db, tenant_id)
+    if tenant is not None and tenant.is_ephemeral:
+        raise EphemeralTenantForbiddenException()
 
     eval_run = start_eval_run(db, tenant_id, body.confidence_threshold_override)
     background_tasks.add_task(

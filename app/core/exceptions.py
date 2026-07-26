@@ -36,3 +36,14 @@ class EvalRunNotFoundException(AppException):
 class GenerationFailedException(AppException):
     status_code = 503
     detail = "Answer generation failed. Please retry."
+
+class EphemeralTenantForbiddenException(AppException):
+    status_code = 403
+    detail = "Ephemeral demo tenants cannot start evaluation runs"
+
+class PayloadTooLargeException(AppException):
+    status_code = 413
+
+    def __init__(self, max_bytes: int):
+        self.detail = f"Uploaded file exceeds the maximum allowed size of {max_bytes} bytes"
+        super().__init__(self.detail)

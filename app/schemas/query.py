@@ -1,9 +1,15 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+# A multi-MB question would still get embedded (a paid Gemini call) and
+# BM25-tokenized over the tenant's whole corpus before anything rejects
+# it, so this bounds it at the API boundary. 2000 chars is generous for
+# any real question, including the multi-part ones in the golden dataset.
+MAX_QUESTION_LENGTH = 2000
 
 class QueryRequest(BaseModel):
-    question: str
+    question: str = Field(min_length=1, max_length=MAX_QUESTION_LENGTH)
     session_id: str | None = None
 
 class RetrievedChunk(BaseModel):

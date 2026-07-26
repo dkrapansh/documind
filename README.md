@@ -403,9 +403,14 @@ size, and I'd revisit them before this ran with real production traffic:
   tenant's entire ready corpus. That was a deliberate scope decision, not
   an oversight, but it's the first thing I'd add if a real user asked for it.
 - `POST /auth/demo-session` rate-limits by IP with the same in-process,
-  single-instance counter as the general rate limiter, and callers behind
-  Vercel's proxy all arrive from a small set of shared egress IPs, so the
-  limiter is a coarse backstop, not a precise one. Fine for a portfolio
-  demo's actual abuse surface; a real deployment would rate-limit at the
-  proxy layer against the visitor's real IP, backed by shared storage
-  instead of process memory.
+  single-instance counter as the general rate limiter, so it resets on
+  every restart and doesn't coordinate across instances. The frontend
+  proxy now forwards each visitor's real IP to the backend under a
+  shared secret (`DEMO_PROXY_SHARED_SECRET`/`DOCUMIND_PROXY_SHARED_SECRET`,
+  see `app/api/routers/auth.py`'s `_client_ip`), so visitors relayed
+  through Vercel no longer collide on the proxy's own egress IP and a
+  direct caller can't forge a fresh IP on every request to dodge the
+  limit. What's still a real limitation: it's one counter per process,
+  so a real deployment with more than one instance would need shared
+  storage (Redis or similar) for the limiter to mean anything across
+  instances.
