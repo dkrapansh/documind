@@ -22,6 +22,24 @@ def create_document(
     db.refresh(document)
     return document
 
+def create_ready_document(
+        db: Session, tenant_id: int, filename: str, content_hash: str, chunk_count: int
+) -> Document:
+    """Used only by the demo-seed cloner (services/demo_seed.py) - skips
+    the pending/processing states because the chunks it's about to attach
+    are copies of already-embedded ones, not freshly extracted text."""
+    document = Document(
+        tenant_id=tenant_id,
+        filename=filename,
+        content_hash=content_hash,
+        status="ready",
+        chunk_count=chunk_count,
+    )
+    db.add(document)
+    db.commit()
+    db.refresh(document)
+    return document
+
 def get_by_id(db: Session, document_id: int) -> Document | None:
     return db.query(Document).filter(Document.id == document_id).first()
 
@@ -40,6 +58,9 @@ def get_by_id_for_tenant(db: Session, document_id: int, tenant_id: int) -> Docum
         Document.id == document_id,
         Document.tenant_id == tenant_id,
     ).first()
+
+def delete_by_tenant(db: Session, tenant_id: int) -> None:
+    db.query(Document).filter(Document.tenant_id == tenant_id).delete()
 
 def delete_for_tenant(db: Session, document_id: int, tenant_id: int) -> bool:
     """Deletes only the document row. Returns False without deleting

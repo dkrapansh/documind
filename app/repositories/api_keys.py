@@ -19,3 +19,6 @@ def get_by_hashed_key(db: Session, hashed_key: str) -> ApiKey | None:
 def revoke(db: Session, api_key_id: int) -> None:
     db.query(ApiKey).filter(ApiKey.id == api_key_id).update({"revoked": True})
     db.commit()
+
+def delete_by_tenant(db: Session, tenant_id: int) -> None:
+    db.query(ApiKey).filter(ApiKey.tenant_id == tenant_id).delete()

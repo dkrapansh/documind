@@ -48,4 +48,22 @@ class Settings(BaseSettings):
     @property
     def frontend_origins(self) -> list[str]:
         return [origin.strip() for origin in self.frontend_origins_raw.split(",") if origin.strip()]
+
+    # POST /auth/demo-session mints a scoped, throwaway tenant per visitor
+    # for the public landing-page demo (see PROJECT_CONTEXT for the
+    # incident that led to this: a single shared demo key let any visitor
+    # read any other visitor's uploaded documents). Swept once older than
+    # this so the demo tenant pool doesn't grow forever.
+    ephemeral_tenant_ttl_minutes: int = 60
+    # Per-IP cap on /auth/demo-session, since it's unauthenticated by
+    # necessity (nothing exists yet to authenticate with). Same in-memory,
+    # single-instance-only limiter as RateLimitMiddleware - acceptable on
+    # Render's free tier (one instance), and callers behind a shared NAT
+    # or the frontend's own proxy hop just share one bucket.
+    demo_session_rate_limit: int = 20
+    demo_session_rate_limit_window_seconds: int = 3600
+    # Tenant whose ready documents get cloned (chunks + embeddings, no
+    # re-embedding) into every new ephemeral demo tenant - see
+    # services/demo_seed.py.
+    seed_tenant_name: str = "demo"
 settings = Settings()

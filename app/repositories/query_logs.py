@@ -35,3 +35,6 @@ def list_by_session(db: Session, tenant_id: int, session_id: str) -> list[QueryL
         .order_by(QueryLog.created_at)
         .all()
     )
+
+def delete_by_tenant(db: Session, tenant_id: int) -> None:
+    db.query(QueryLog).filter(QueryLog.tenant_id == tenant_id).delete()

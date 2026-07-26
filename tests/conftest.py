@@ -15,6 +15,7 @@ from app.db.base import Base
 import app.models
 from app.main import app
 import app.middleware.rate_limit as rate_limit_module
+import app.api.routers.auth as auth_router_module
 
 from sqlalchemy.orm import sessionmaker
 
@@ -36,6 +37,7 @@ def clean_slate(test_engine):
         trans.commit()
 
     rate_limit_module._request_counts.clear()
+    auth_router_module._demo_session_counts.clear()
     yield
 
 @pytest.fixture

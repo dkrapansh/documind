@@ -52,6 +52,17 @@ def delete_by_document(db: Session, document_id: int, tenant_id: int) -> None:
         Chunk.document_id == document_id, Chunk.tenant_id == tenant_id
     ).delete()
 
+def delete_by_tenant(db: Session, tenant_id: int) -> None:
+    db.query(Chunk).filter(Chunk.tenant_id == tenant_id).delete()
+
+def list_by_document(db: Session, document_id: int, tenant_id: int) -> list[Chunk]:
+    return (
+        db.query(Chunk)
+        .filter(Chunk.document_id == document_id, Chunk.tenant_id == tenant_id)
+        .order_by(Chunk.chunk_index)
+        .all()
+    )
+
 def list_by_tenant(db: Session, tenant_id: int) -> list[Chunk]:
     """All chunks for a tenant, unscored. BM25 has no SQL-level index,
     it needs the whole corpus in memory to score, so this just does

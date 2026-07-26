@@ -13,7 +13,8 @@ EXCLUDED_PATHS = {
     "/docs",
     "/openapi.json",
     "/redoc",
-    "/auth/keys",    
+    "/auth/keys",
+    "/auth/demo-session",
 }
 
 class AuthMiddleware(BaseHTTPMiddleware):
