@@ -40,4 +40,12 @@ class Settings(BaseSettings):
     # was - invalidation on document change is what keeps this safe even if
     # the TTL is generous.
     cache_ttl_seconds: int = 300
+
+    # Comma-separated allowlist for CORSMiddleware, not a JSON list - Render's
+    # env var UI is plain text fields, so this stays copy-pasteable there.
+    frontend_origins_raw: str = "http://localhost:5173"
+
+    @property
+    def frontend_origins(self) -> list[str]:
+        return [origin.strip() for origin in self.frontend_origins_raw.split(",") if origin.strip()]
 settings = Settings()

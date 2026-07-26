@@ -134,6 +134,7 @@ async def query_documents_stream(
                 "document_id": chunk.document_id,
                 "chunk_index": chunk.chunk_index,
                 "text": chunk.text,
+                "confidence": chunk.confidence,
             }
             for chunk in chunks
         ]

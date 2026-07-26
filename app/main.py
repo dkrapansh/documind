@@ -1,7 +1,9 @@
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.routers import health, auth, documents, history, query, eval
+from app.config import settings
 from app.core.exceptions import AppException
 from app.middleware.auth import AuthMiddleware
 from app.middleware.correlation_id import CorrelationIdMiddleware
@@ -13,6 +15,16 @@ app = FastAPI(title="DocuMind", version="0.1.0")
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(AuthMiddleware)
 app.add_middleware(CorrelationIdMiddleware)
+# Runs outermost so it can attach CORS headers to error responses too
+# (including the 401s the auth middleware above returns) - otherwise a
+# rejected browser request fails with an opaque CORS error instead of a
+# readable 401.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.frontend_origins,
+    allow_methods=["GET", "POST"],
+    allow_headers=["X-API-Key", "Content-Type"],
+)
 
 @app.exception_handler(AppException)
 async def app_exception_handler(request: Request, exc: AppException):
