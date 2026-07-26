@@ -1,12 +1,13 @@
 {
-  "version": "v2",
+  "version": "v3",
   "schema": {
     "id": "stable identifier, referenced across eval runs to track a question's metrics over time",
     "question": "the natural-language question sent to POST /query during an eval run",
     "ground_truth": "the correct answer, used by context_precision (and for human sanity-checking faithfulness/answer_relevancy scores)",
     "reference_contexts": "exact excerpt(s) from eval/golden_corpus/ that should have been retrieved to answer correctly; empty list for expected_refusal items, since no supporting passage exists",
     "source_documents": "which eval/golden_corpus/ files reference_contexts were drawn from, so the eval harness knows what to ingest",
-    "category": "single_chunk_lookup | multi_chunk_synthesis | expected_refusal"
+    "category": "single_chunk_lookup | multi_chunk_synthesis | expected_refusal | numeric_derived | negation_distractor | cross_doc_conflict | multi_hop",
+    "_comment_v3": "gd-031..041 (v3) test faithfulness/refusal harder than gd-001..030, whose near-verbatim ground truths made faithfulness a trivial 1.0 (see RESULTS.md). numeric_derived needs arithmetic the corpus never states; negation_distractor shares vocabulary with a real sentence but asks about the excluded case; cross_doc_conflict compares two documents' numbers; multi_hop needs elimination across 3 chunks; two new expected_refusal items are near-miss instead of unrelated topics."
   },
   "items": [
     {
@@ -304,6 +305,120 @@
       "reference_contexts": [],
       "source_documents": [],
       "category": "expected_refusal"
+    },
+    {
+      "id": "gd-031",
+      "question": "How much extra would it cost per month to add 15 team seats beyond what the Business plan already includes?",
+      "ground_truth": "15 additional seats at $5/month each would cost $75/month on top of the base Business plan price.",
+      "reference_contexts": [
+        "Each Business plan subscription includes up to 10 team member seats; additional seats can be purchased for $5/month per seat."
+      ],
+      "source_documents": ["team_collaboration.txt"],
+      "category": "numeric_derived"
+    },
+    {
+      "id": "gd-032",
+      "question": "If I buy 3 hardware security keys at once, how much will that cost in total before shipping?",
+      "ground_truth": "3 hardware security keys at $25 each would cost $75 total.",
+      "reference_contexts": [
+        "Northwind sells an optional physical two-factor authentication hardware key for $25 per key."
+      ],
+      "source_documents": ["security_key_shipping.txt"],
+      "category": "numeric_derived"
+    },
+    {
+      "id": "gd-033",
+      "question": "How much do I save per year on the Business plan by paying annually instead of monthly, given the annual billing discount?",
+      "ground_truth": "Paying monthly costs $29 x 12 = $348 per year. Annual billing gets a 15% discount, so $348 x 0.85 = $295.80 per year - a saving of $52.20 per year.",
+      "reference_contexts": [
+        "The Business plan costs $29/month and includes 1 TB of storage with priority chat and email support.",
+        "All plans include unlimited file versioning and can be billed monthly or annually, with a 15% discount applied to annual billing."
+      ],
+      "source_documents": ["pricing_plans.txt", "pricing_plans.txt"],
+      "category": "numeric_derived"
+    },
+    {
+      "id": "gd-034",
+      "question": "Since the refund policy allows prorated refunds, does that mean I'll get a prorated refund if I cancel my monthly plan halfway through the billing cycle?",
+      "ground_truth": "No. Prorated refunds apply only to annual plans after the first 30 days; monthly plans are non-refundable once the 30-day window has closed, and cancelling mid-cycle does not entitle you to a prorated refund.",
+      "reference_contexts": [
+        "Annual plans are refunded on a pro-rated basis after the first 30 days; monthly plans are non-refundable once the 30-day window has closed.",
+        "Cancelling mid-cycle does not entitle the customer to a prorated refund for the current billing period under the standard refund policy."
+      ],
+      "source_documents": ["refund_policy.txt", "account_cancellation.txt"],
+      "category": "negation_distractor"
+    },
+    {
+      "id": "gd-035",
+      "question": "Does the Enterprise plan cap API usage at 10,000 requests per day?",
+      "ground_truth": "No. The 10,000-requests-per-day limit applies to the Business plan; the Enterprise plan has no fixed rate limit and instead uses a fair-use policy.",
+      "reference_contexts": [
+        "The Standard plan is limited to 1,000 API requests per day; the Business plan allows 10,000 requests per day; the Enterprise plan has no fixed rate limit and instead uses a fair-use policy."
+      ],
+      "source_documents": ["api_access.txt"],
+      "category": "negation_distractor"
+    },
+    {
+      "id": "gd-036",
+      "question": "After I cancel my account, do I have more time to reactivate before my data is deleted, or more time to use an unused referral credit before it expires?",
+      "ground_truth": "More time to use a referral credit: unused referral credits stay valid for 12 months, while cancelled account data is retained for only 30 days before permanent deletion.",
+      "reference_contexts": [
+        "After cancellation, account data is retained for 30 days to allow for reactivation, after which all files and account data are permanently deleted.",
+        "Referral credits are applied automatically within 3 business days of the referred customer's first successful payment and expire if unused after 12 months."
+      ],
+      "source_documents": ["account_cancellation.txt", "referral_program.txt"],
+      "category": "cross_doc_conflict"
+    },
+    {
+      "id": "gd-037",
+      "question": "Which has the stricter deadline: escalating an unresolved critical support issue to engineering, or notifying customers of a confirmed data breach?",
+      "ground_truth": "The support escalation has the stricter deadline: unresolved critical issues escalate to engineering after 2 hours, while confirmed data breaches must be notified to affected customers within 72 hours.",
+      "reference_contexts": [
+        "Unresolved critical issues are automatically escalated to engineering after 2 hours without update.",
+        "In the event of a confirmed data breach affecting customer data, Northwind notifies affected customers within 72 hours of confirmation, in line with standard regulatory breach-notification requirements."
+      ],
+      "source_documents": ["support_policy.txt", "security_policy.txt"],
+      "category": "cross_doc_conflict"
+    },
+    {
+      "id": "gd-038",
+      "question": "If a data breach is suspected but not yet confirmed, how quickly must Northwind notify affected customers?",
+      "ground_truth": "I don't have enough relevant information in the uploaded documents to answer that question confidently.",
+      "reference_contexts": [],
+      "source_documents": [],
+      "category": "expected_refusal"
+    },
+    {
+      "id": "gd-039",
+      "question": "If a referred customer who triggered my $10 referral credit later requests a refund within the 30-day window, is my referral credit reversed?",
+      "ground_truth": "I don't have enough relevant information in the uploaded documents to answer that question confidently.",
+      "reference_contexts": [],
+      "source_documents": [],
+      "category": "expected_refusal"
+    },
+    {
+      "id": "gd-040",
+      "question": "I need at least 10,000 API requests per day and 24/7 support with a 4-hour response guarantee - which is the cheapest plan that satisfies both requirements, and what does it cost per month?",
+      "ground_truth": "The Business plan, at $29/month, is the cheapest plan that satisfies both: it allows 10,000 API requests per day and includes 24/7 priority support with a 4-hour response target. The Standard plan doesn't meet the API limit (only 1,000/day), and the Enterprise plan is custom-priced and unnecessary for these requirements.",
+      "reference_contexts": [
+        "The Standard plan is limited to 1,000 API requests per day; the Business plan allows 10,000 requests per day; the Enterprise plan has no fixed rate limit and instead uses a fair-use policy.",
+        "Business-tier customers receive priority email and chat support with a target response time of 4 hours, 24/7.",
+        "The Business plan costs $29/month and includes 1 TB of storage with priority chat and email support."
+      ],
+      "source_documents": ["api_access.txt", "support_policy.txt", "pricing_plans.txt"],
+      "category": "multi_hop"
+    },
+    {
+      "id": "gd-041",
+      "question": "I'm currently on the Standard plan and want to give 3 teammates shared folder access, plus save money by billing annually - which plan should I switch to, and what's the annual-discounted monthly-equivalent cost?",
+      "ground_truth": "Switch to the Business plan, since the Standard plan is single-user only and doesn't support shared folders. With the 15% annual billing discount, the Business plan's $29/month works out to about $24.65/month equivalent ($29 x 0.85).",
+      "reference_contexts": [
+        "The Standard plan is single-user only and does not support shared folders.",
+        "The Business plan costs $29/month and includes 1 TB of storage with priority chat and email support.",
+        "All plans include unlimited file versioning and can be billed monthly or annually, with a 15% discount applied to annual billing."
+      ],
+      "source_documents": ["team_collaboration.txt", "pricing_plans.txt", "pricing_plans.txt"],
+      "category": "multi_hop"
     }
   ]
 }

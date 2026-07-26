@@ -217,14 +217,12 @@ distance.
 
 ## Evaluation is a real offline process, not a vibe check
 
-There's a hand-built golden dataset of 30 question and answer pairs against a
-fictional six-document corpus, split across single-chunk lookups, questions
-that require synthesizing two documents, and questions that should be
-refused because the answer genuinely isn't in the corpus. `eval/run_eval.py`
-runs every item through the actual production retrieval and answering
-functions (not a reimplementation of them) and scores the results with RAGAS.
+There's a hand-built golden dataset against a fictional ten-document corpus.
+`eval/run_eval.py` runs every item through the actual production retrieval
+and answering functions (not a reimplementation of them) and scores the
+results with RAGAS.
 
-| Metric | Score |
+| Metric | Score (v2 dataset, 30 items) |
 |---|---|
 | Faithfulness | 1.0 |
 | Answer relevancy | 0.83 |
@@ -238,6 +236,25 @@ unanswerable questions, and re-tuning against measured data brought that to
 The full methodology and before/after numbers, including a later rework
 after a reranker swap changed the score scale entirely, are in
 [`eval/RESULTS.md`](eval/RESULTS.md).
+
+That 1.0 faithfulness score is real but easy to over-read: every v2
+`single_chunk_lookup` answer is close to a verbatim echo of one source
+sentence, and its `multi_chunk_synthesis` items are two verbatim sentences
+concatenated rather than actual synthesis, so faithfulness there mostly
+proves the model doesn't add unsupported claims to an easy extractive
+lookup. The six `expected_refusal` items are also all on topics completely
+absent from the corpus (SSO, uptime SLA, crypto payment, and so on), so
+they don't test the refusal gate anywhere near its boundary. The dataset
+is now v3 (41 items, `eval/golden_dataset.json`): it adds items that require
+arithmetic the corpus never states outright, questions that share vocabulary
+with a real sentence but ask about the case that sentence excludes,
+questions that require comparing two documents' numbers against each other,
+multi-hop elimination across three chunks, and two refusal items that are
+topically adjacent to real content instead of unrelated to it. The table
+above is still the last real measurement (the v2 run); a v3 run costs real,
+rate-limited Gemini quota, so updated numbers land in
+[`eval/RESULTS.md`](eval/RESULTS.md) once that run happens rather than being
+estimated here.
 
 ## The reranker rewrite, because it's a good story
 

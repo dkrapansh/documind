@@ -1,3 +1,53 @@
+# Golden dataset hardened to v2 -> v3 (2026-07-26)
+
+Runs 6-8 below all score faithfulness at a flat 1.0 on the 24 `single_chunk_lookup` /
+`multi_chunk_synthesis` answerable items. That number is real but weaker evidence than
+it looks: every `single_chunk_lookup` item's `ground_truth` is a near-verbatim copy of
+one source sentence, and every `multi_chunk_synthesis` item is two verbatim sentences
+concatenated, not actual synthesis. Generation runs at `temperature=0` and mostly echoes
+the retrieved chunk back, so RAGAS faithfulness (does the answer's claims entail from
+`retrieved_contexts`?) is close to trivially satisfied - it says the model doesn't bolt
+on extra claims on an easy extractive lookup, not that it stays faithful under harder
+conditions. Refusal accuracy (6/6 in run 8) has the same shape: all six original
+`expected_refusal` items are on topics completely absent from the corpus (SSO, uptime
+SLA, crypto payment, free trial, nonprofit discount, white-label), so both retrieval legs
+return weak candidates and the 0.7 gate fires easily. Nothing in the v2 set exercises the
+threshold's boundary region (no golden item scores between the measured 0.405/0.909 gap -
+see eval run 8 below), so 0.7 is well-chosen for these 30 items but untested against a
+genuine near-miss.
+
+`golden_dataset.json` v3 adds 11 items (gd-031..gd-041) across four new categories,
+built from the same 10-document corpus (no new source documents, so no re-ingestion
+changes needed beyond content-hash dedup already handling it):
+
+- **`numeric_derived`** (gd-031/032/033): the answer requires arithmetic the corpus
+  never states outright (e.g. 15 extra seats x $5/month = $75/month), so an unfaithful
+  answer has to invent or miscalculate a number rather than just echo a sentence.
+- **`negation_distractor`** (gd-034/035): the question shares vocabulary with a real
+  sentence but asks about the case that sentence explicitly excludes (e.g. asking about
+  a prorated refund on a *monthly* plan, when the corpus's "prorated" sentence is
+  specifically about *annual* plans) - tests whether retrieval + generation discriminate
+  the exception, not just pattern-match on shared terms.
+- **`cross_doc_conflict`** (gd-036/037): requires comparing two documents' numbers
+  against each other (which window is longer, which deadline is stricter), not just
+  reporting both facts side by side the way the original `multi_chunk_synthesis` items do.
+- **`multi_hop`** (gd-040/041): requires an elimination/selection step across three
+  chunks (which plan satisfies two constraints at once, and which doesn't) rather than
+  concatenating two independently-retrievable sentences.
+- Two new **`expected_refusal`** items (gd-038/039) are deliberately near-miss: topically
+  adjacent to a real chunk (data-breach notification timing, referral-credit/refund
+  interaction) with heavy lexical overlap, but the specific fact asked for isn't in the
+  corpus. These are a harder test of the refusal gate than the original six's
+  completely-unrelated topics.
+
+No eval run has been executed against v3 yet - this section documents the dataset
+change itself. Running `python -m eval.run_eval` (or `POST /eval/runs`) against v3 costs
+real, rate-limited Gemini quota (~41 items x `_ITEM_PACING_SECONDS`, plus RAGAS scoring
+calls), so the resulting faithfulness/relevancy/precision numbers should come from an
+actual run, not be estimated here. Expect faithfulness and context_precision to drop
+below the v2 numbers on the new items specifically - a `numeric_derived` or
+`negation_distractor` question failing is exactly the failure mode v2 couldn't surface.
+
 # Eval harness results: confidence_threshold tuning (Day 26/27)
 
 Two full runs of `eval/golden_dataset.json` (v2, 30 items: 24 answerable,
