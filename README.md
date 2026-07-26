@@ -5,7 +5,9 @@ questions about them in plain English, and get answers grounded in the actual
 content, with the source chunks cited and a hard refusal when the documents
 don't contain a real answer.
 
-Live at [documind-oyhv.onrender.com](https://documind-oyhv.onrender.com)
+API live at [documind-oyhv.onrender.com](https://documind-oyhv.onrender.com),
+landing page and working demo at
+[documind-krapansh.vercel.app](https://documind-krapansh.vercel.app)
 (Render's free tier spins the instance down after periods of inactivity, so
 the first request after a while can take 30 to 50 seconds to wake it up).
 
@@ -118,7 +120,10 @@ documind/
 │   ├── golden_dataset.json      # 30 question/answer/category triples
 │   ├── run_eval.py              # CLI entry point for an offline eval run
 │   └── RESULTS.md               # eval history and threshold-tuning writeups
-├── tests/                       # 18 files, 52 tests, run against a real Postgres instance
+├── tests/                       # 18 files, 65 tests, run against a real Postgres instance
+├── frontend/                     # React + Vite landing page and live demo (see its own README)
+│   ├── src/                      # components, GSAP scroll animation, api client
+│   └── api/                      # Vercel serverless proxy: session cookie, no client-side key
 ├── .github/workflows/ci.yml     # GitHub Actions: real pgvector service container
 ├── Dockerfile
 ├── docker-compose.yml            # local Postgres + pgvector
@@ -255,6 +260,69 @@ scores were unaffected by the swap, and refusal accuracy improved, since the
 new threshold was chosen from a real measured score gap in the golden dataset
 rather than carried over by assumption from the old scoring scale.
 
+## The public demo leaked user data, and the fix is architectural
+
+The landing page (`frontend/`) is a separate React and Vite app with a
+working demo: upload a document, ask it a question, watch retrieval run
+and the answer stream back. The first version authenticated every
+visitor with one API key baked into the client bundle at build time.
+That's a disclosed, known tradeoff for a low-stakes public demo, a Vite
+`VITE_` prefixed env var is always readable in the shipped JS, no
+different in principle from any other client-side hardcoded key.
+
+What turned that from a theoretical tradeoff into a real problem is
+that the backend scopes retrieval by tenant, not by browser session.
+One shared key means one shared tenant, which means every visitor's
+uploads land in the same document pool, and every visitor's questions
+can retrieve any other visitor's chunks. This surfaced during my own
+testing: I uploaded a real personal document to try the demo, asked an
+unrelated question, and got back an answer quoting from it, mixed in
+with the seeded example document.
+
+Containment came first, since the leak was live. The exposed key was
+revoked and the exposed document deleted, through two endpoints that
+didn't exist that morning and exist permanently now,
+`POST /auth/keys/revoke` and `DELETE /documents/{id}`, because tenant
+cleanup is a real operational need independent of how this particular
+incident started.
+
+The actual fix is architectural, not a patch on the old design.
+`frontend/api/` now holds Vercel serverless functions that sit between
+the browser and the backend. The browser calls only same-origin
+`/api/*` routes and never sees an API key at all. On a request with no
+session cookie, the proxy calls a new backend endpoint,
+`POST /auth/demo-session`, which mints a tenant scoped to that one
+visitor and stores the resulting key in an `httpOnly`, `Secure`,
+`SameSite=Strict` cookie, unreadable by any client-side script. Every
+visitor gets an isolated tenant by construction, so there's no shared
+pool left to leak from.
+
+The harder part was making that isolation free. A brand new, empty
+tenant would break the "ask it something right away" pitch of the
+demo, so `POST /auth/demo-session` clones the seed document's chunks,
+text and embeddings both, into the new tenant by value, with zero
+calls to the embedding API. Embeddings are deterministic for a given
+model and input text, so copying an already-computed vector is exact,
+not an approximation, and it costs a database write instead of a
+network round trip to Gemini. Every visitor gets a ready-to-query copy
+of the sample handbook in milliseconds, and never anyone else's
+uploads. Ephemeral tenants older than an hour are swept the next time
+`/auth/demo-session` runs, which piggybacks cleanup on real traffic
+instead of needing a cron job Render's free tier doesn't offer.
+
+One implementation detail cost real debugging time and is worth naming
+on its own: the proxy functions have to run on Vercel's Node.js
+runtime, not Edge. Edge Functions have a hard, non-configurable 25
+second timeout, shorter than the roughly 50 seconds Render's free tier
+can take to wake from a cold start. An Edge proxy would have failed
+exactly the requests it existed to make more reliable. Node.js
+Functions default to a 300 second timeout under Fluid Compute on every
+plan including the free one, so that's what runs today.
+
+Full writeup, the exact endpoints, and the local dev workflow
+(`npx vercel dev`, since these proxy functions don't run under plain
+`vite dev`) are in `frontend/README.md`.
+
 ## Tech stack
 
 - **API**: FastAPI, Pydantic
@@ -272,16 +340,19 @@ rather than carried over by assumption from the old scoring scale.
 | Endpoint | Purpose |
 |---|---|
 | `POST /auth/keys` | Create a tenant and issue an API key |
+| `POST /auth/keys/revoke` | Revoke the calling key (self-service only, no cross-tenant lookup) |
+| `POST /auth/demo-session` | Mint an ephemeral, isolated tenant for the public landing-page demo |
 | `POST /documents` | Upload a document (`.txt`, `.pdf`, `.docx`) |
 | `GET /documents` | List the requesting tenant's documents |
 | `GET /documents/{id}` | Check ingestion status |
+| `DELETE /documents/{id}` | Delete a document and its chunks |
 | `POST /query` | Ask a question, get an answer with cited sources |
 | `GET /query/stream` | Same as above, streamed token by token over SSE |
 | `GET /history/{session_id}` | Prior questions and answers in a session |
 | `POST /eval/runs` | Kick off an offline RAGAS evaluation run |
 | `GET /eval/runs/{id}` | Read back a completed evaluation run's scores |
 
-Every endpoint except `/auth/keys` and `/health` requires an `X-API-Key`
+Every endpoint except `/auth/keys`, `/auth/demo-session`, and `/health` requires an `X-API-Key`
 header. Interactive docs are at `/docs` on any running instance.
 
 ## Running locally
@@ -304,11 +375,13 @@ You'll need a `.env` with `DATABASE_URL` and `GEMINI_API_KEY` set. See
 pytest -m "not live_api"
 ```
 
-52 tests, run against a real Postgres instance (never mocked), covering
+65 tests, run against a real Postgres instance (never mocked), covering
 multi-tenant isolation, the full retrieval funnel, ingestion, caching,
-rate-limiting, and the refusal path. One test is marked `live_api` and hits
-the real Gemini embedding endpoint as a genuine smoke test; it's excluded
-from CI on purpose since it costs real quota and isn't deterministic.
+rate-limiting, the refusal path, and the ephemeral demo tenant lifecycle
+(seed cloning, per-visitor isolation, TTL sweep). One test is marked
+`live_api` and hits the real Gemini embedding endpoint as a genuine smoke
+test; it's excluded from CI on purpose since it costs real quota and isn't
+deterministic.
 
 ## What I'd do differently at real scale
 
@@ -329,3 +402,10 @@ size, and I'd revisit them before this ran with real production traffic:
 - There's no per-document filter on queries; every query searches a
   tenant's entire ready corpus. That was a deliberate scope decision, not
   an oversight, but it's the first thing I'd add if a real user asked for it.
+- `POST /auth/demo-session` rate-limits by IP with the same in-process,
+  single-instance counter as the general rate limiter, and callers behind
+  Vercel's proxy all arrive from a small set of shared egress IPs, so the
+  limiter is a coarse backstop, not a precise one. Fine for a portfolio
+  demo's actual abuse surface; a real deployment would rate-limit at the
+  proxy layer against the visitor's real IP, backed by shared storage
+  instead of process memory.
