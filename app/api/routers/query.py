@@ -1,8 +1,7 @@
 import json
 import time
-import uuid
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
@@ -10,10 +9,9 @@ from starlette.background import BackgroundTask
 from app.api.deps import get_db
 from app.api.security_scheme import api_key_header
 from app.db.session import SessionLocal
-from app.repositories.query_logs import create_query_log
-from app.schemas.query import QueryRequest, QueryResponse
-from app.services.answering import REFUSAL_ANSWER, answer_question, stream_answer_question
-from app.services.query_cache import get_cached_answer, set_cached_answer
+from app.schemas.query import MAX_QUESTION_LENGTH, QueryRequest, QueryResponse
+from app.services.answering import REFUSAL_ANSWER, stream_answer_question
+from app.services.query_service import answer_query, log_query, resolve_session_id
 from app.services.reranking import retrieve_ranked
 
 router = APIRouter(prefix="/query", tags=["query"])
@@ -25,57 +23,20 @@ async def query_documents(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    tenant_id = request.state.tenant_id
-    started_at = time.perf_counter()
-
-    # First call of a conversation gets a minted session_id; the caller
-    # sends it back on follow-ups so history groups by session, not by
-    # individual request.
-    session_id = body.session_id or str(uuid.uuid4())
-
-    # Cache-aside: a hit skips retrieval (embedding + BM25 + rerank) and the
-    # LLM call entirely. Keyed on (tenant, normalized question, doc-scope
-    # version) - see services/query_cache.py for why session_id is never
-    # part of what's cached.
-    cached = get_cached_answer(tenant_id, body.question)
-    if cached is not None:
-        chunks = cached.sources
-        answer = cached.answer
-        confidence = cached.confidence
-    else:
-        chunks = retrieve_ranked(db, tenant_id, body.question)
-        if not chunks:
-            answer = REFUSAL_ANSWER
-            confidence = None
-        else:
-            answer = answer_question(body.question, chunks).answer
-            confidence = chunks[0].confidence
-        set_cached_answer(tenant_id, body.question, answer, chunks, confidence)
-
-    response = QueryResponse(
-        question=body.question, answer=answer, sources=chunks, session_id=session_id
-    )
-
-    create_query_log(
+    return answer_query(
         db,
-        tenant_id=tenant_id,
-        session_id=session_id,
+        tenant_id=request.state.tenant_id,
         question=body.question,
-        retrieved_chunk_ids=[chunk.id for chunk in chunks],
-        answer=answer,
-        confidence=confidence,
-        latency_ms=int((time.perf_counter() - started_at) * 1000),
+        session_id=body.session_id,
         correlation_id=request.state.correlation_id,
     )
-
-    return response
 
 
 def _log_streamed_query(
     tenant_id: int,
     session_id: str,
     question: str,
-    retrieved_chunk_ids: list[int],
+    chunks: list,
     accumulated_answer: list[str],
     confidence: float | None,
     started_at: float,
@@ -89,16 +50,9 @@ def _log_streamed_query(
     """
     db = SessionLocal()
     try:
-        create_query_log(
-            db,
-            tenant_id=tenant_id,
-            session_id=session_id,
-            question=question,
-            retrieved_chunk_ids=retrieved_chunk_ids,
-            answer="".join(accumulated_answer),
-            confidence=confidence,
-            latency_ms=int((time.perf_counter() - started_at) * 1000),
-            correlation_id=correlation_id,
+        log_query(
+            db, tenant_id, session_id, question, chunks, "".join(accumulated_answer),
+            confidence, started_at, correlation_id,
         )
     finally:
         db.close()
@@ -106,8 +60,8 @@ def _log_streamed_query(
 
 @router.get("/stream", dependencies=[Depends(api_key_header)])
 async def query_documents_stream(
-    question: str,
     request: Request,
+    question: str = Query(min_length=1, max_length=MAX_QUESTION_LENGTH),
     db: Session = Depends(get_db),
     session_id: str | None = None,
 ):
@@ -122,7 +76,7 @@ async def query_documents_stream(
     tenant_id = request.state.tenant_id
     correlation_id = request.state.correlation_id
     started_at = time.perf_counter()
-    resolved_session_id = session_id or str(uuid.uuid4())
+    resolved_session_id = resolve_session_id(session_id)
 
     chunks = retrieve_ranked(db, tenant_id, question)
     accumulated_answer: list[str] = []
@@ -156,7 +110,7 @@ async def query_documents_stream(
         tenant_id=tenant_id,
         session_id=resolved_session_id,
         question=question,
-        retrieved_chunk_ids=[chunk.id for chunk in chunks],
+        chunks=chunks,
         accumulated_answer=accumulated_answer,
         confidence=chunks[0].confidence if chunks else None,
         started_at=started_at,

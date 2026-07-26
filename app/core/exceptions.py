@@ -32,3 +32,7 @@ class DocumentNotFoundException(AppException):
 class EvalRunNotFoundException(AppException):
     status_code = 404
     detail = "Eval run not found"
+
+class GenerationFailedException(AppException):
+    status_code = 503
+    detail = "Answer generation failed. Please retry."

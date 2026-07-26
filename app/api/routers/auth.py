@@ -1,5 +1,4 @@
 import time
-import uuid
 from collections import defaultdict
 
 from fastapi import APIRouter, Depends, Request, Response
@@ -12,8 +11,7 @@ from app.core.exceptions import RateLimitExceededException
 from app.repositories.api_keys import create_api_key, revoke
 from app.repositories.tenants import create_tenant
 from app.schemas.auth import CreateKeyRequest, CreateKeyResponse
-from app.services.demo_seed import clone_seed_corpus
-from app.services.tenant_cleanup import sweep_expired_ephemeral_tenants
+from app.services.demo_session import mint_demo_session
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -64,10 +62,5 @@ def create_demo_session(request: Request, db: Session = Depends(get_db)):
     if count > settings.demo_session_rate_limit:
         raise RateLimitExceededException()
 
-    sweep_expired_ephemeral_tenants(db)
-
-    tenant_name = f"demo-session-{uuid.uuid4().hex[:12]}"
-    tenant = create_tenant(db, name=tenant_name, is_ephemeral=True)
-    clone_seed_corpus(db, tenant.id)
-    _, raw_key = create_api_key(db, tenant_id=tenant.id)
+    tenant, raw_key = mint_demo_session(db)
     return CreateKeyResponse(api_key=raw_key, tenant_id=tenant.id)

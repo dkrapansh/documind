@@ -249,3 +249,70 @@ def test_query_cache_is_isolated_per_tenant(client, monkeypatch):
 
     assert other_response.json()["sources"] == []
     assert call_count["n"] == 1  # only acme's query ever reached the LLM
+
+def test_query_returns_503_and_still_logs_when_generation_fails(client, db_session, monkeypatch):
+    monkeypatch.setattr("app.services.ingestion.embed_text", _fake_embed_text)
+    monkeypatch.setattr("app.services.retrieval.embed_text", _fake_embed_text)
+
+    def _raise(messages):
+        raise RuntimeError("Gemini returned no answer text (safety block or empty candidate)")
+    monkeypatch.setattr("app.services.answering.generate_answer", _raise)
+
+    headers = _auth_headers(client)
+
+    file_content = b"Refund Policy: Refunds are available within 30 days of purchase."
+    upload_response = client.post(
+        "/documents",
+        headers=headers,
+        files={"file": ("policy.txt", io.BytesIO(file_content), "text/plain")},
+    )
+    document_id = upload_response.json()["id"]
+    client.get(f"/documents/{document_id}", headers=headers)
+
+    response = client.post(
+        "/query", headers=headers, json={"question": "What is the refund policy?"}
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Answer generation failed. Please retry."
+
+    [log] = db_session.query(QueryLog).all()
+    assert log.answer == "Something went wrong while generating an answer. Please try again."
+    assert log.confidence is not None
+
+def test_query_generation_failure_is_not_cached(client, monkeypatch):
+    monkeypatch.setattr("app.services.ingestion.embed_text", _fake_embed_text)
+    monkeypatch.setattr("app.services.retrieval.embed_text", _fake_embed_text)
+
+    call_count = {"n": 0}
+    def _fail_once_then_succeed(messages):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise RuntimeError("transient failure")
+        return "Refunds are available within 30 days of purchase."
+    monkeypatch.setattr("app.services.answering.generate_answer", _fail_once_then_succeed)
+
+    headers = _auth_headers(client)
+
+    file_content = b"Refund Policy: Refunds are available within 30 days of purchase."
+    upload_response = client.post(
+        "/documents",
+        headers=headers,
+        files={"file": ("policy.txt", io.BytesIO(file_content), "text/plain")},
+    )
+    document_id = upload_response.json()["id"]
+    client.get(f"/documents/{document_id}", headers=headers)
+
+    first = client.post(
+        "/query", headers=headers, json={"question": "What is the refund policy?"}
+    )
+    assert first.status_code == 503
+
+    # A failed generation must not poison the cache - the identical
+    # question retried right after should hit the real pipeline again,
+    # not a cached failure answer.
+    second = client.post(
+        "/query", headers=headers, json={"question": "What is the refund policy?"}
+    )
+    assert second.status_code == 200
+    assert second.json()["answer"] == "Refunds are available within 30 days of purchase."

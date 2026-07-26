@@ -42,6 +42,13 @@ def generate_answer(messages: list[dict]) -> str:
             temperature=0.0,
         ),
     )
+    if not response.text:
+        # A safety block or empty candidate leaves response.text as None;
+        # raising here (instead of returning None into a str-typed
+        # QueryResponse.answer, which would 500 on Pydantic validation)
+        # lets query_service.answer_query catch this the same way as any
+        # other generation failure.
+        raise RuntimeError("Gemini returned no answer text (safety block or empty candidate)")
     return response.text
 
 
