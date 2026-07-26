@@ -94,7 +94,7 @@ export function Hero() {
           <button className="btn" onClick={scrollToDemo}>
             Try it live
           </button>
-          <a className="btn ghost" href="https://github.com/" target="_blank" rel="noreferrer">
+          <a className="btn ghost" href="https://github.com/dkrapansh/documind" target="_blank" rel="noreferrer">
             Read the design →
           </a>
         </div>
