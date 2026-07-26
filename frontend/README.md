@@ -4,6 +4,52 @@ A scroll-driven marketing page for [DocuMind](../README.md), a multi-tenant RAG 
 API. Built with React + Vite and GSAP/ScrollTrigger, wired to the live backend for a working
 upload → ask → grounded-answer demo, not a mock.
 
+## Architecture: same-origin proxy, no client-visible API key
+
+This is a Vercel project, not just a static site: `api/` holds Node.js serverless functions that
+sit between the browser and the DocuMind backend. The browser never talks to the backend directly
+and never holds an API key.
+
+```
+browser --(same-origin, cookie)--> /api/* (Vercel function) --(X-API-Key)--> DocuMind backend
+```
+
+- `api/documents.js` proxies list / status / upload (`GET`, `GET ?id=`, `POST`).
+- `api/query-stream.js` proxies the SSE streaming endpoint, relaying the response body through
+  unmodified so tokens still arrive as they're generated.
+- `api/_lib/session.js` is shared by both: on a request with no `dm_session` cookie, it calls the
+  backend's `POST /auth/demo-session` to mint a fresh, isolated, throwaway tenant for that visitor,
+  then sets the raw key as an `httpOnly`, `Secure`, `SameSite=Strict` cookie. Client JS can't read
+  it; it's only ever forwarded server-side as the `X-API-Key` header on the next backend call.
+
+Both functions default to the **Node.js runtime, not Edge**: Edge Functions have a hard,
+non-configurable 25s timeout, shorter than a Render free-tier cold start (30-50s). Node.js
+Functions default to 300s (Fluid Compute, all plans including Hobby) and stream just as well.
+`vercel.json` also sets an explicit 60s `maxDuration`.
+
+### Why this exists (not a design choice made in a vacuum)
+
+The first version of this demo used one shared API key, baked into the client bundle via a
+`VITE_DEMO_API_KEY` env var. That key was trivially readable in the deployed JS, and because the
+backend scopes retrieval by tenant rather than by browser session, everyone shared one tenant: any
+visitor's uploaded document was retrievable by any other visitor's questions. This was caught
+during testing (a real document got uploaded and its content surfaced in an unrelated query).
+Containment at the time: the leaked key was revoked (`POST /auth/keys/revoke`, `app/api/routers/auth.py`)
+and the exposed document deleted (`DELETE /documents/{id}`, `app/api/routers/documents.py`). Both
+endpoints exist because that incident needed them, and they stay useful for tenant cleanup
+generally. This proxy plus per-visitor tenant design is the actual fix, not just the patch.
+
+### Per-visitor isolation, and how it stays cheap
+
+`POST /auth/demo-session` (backend) doesn't just mint a bare tenant: it clones the seed corpus
+(the sample Northwind handbook) into it: existing chunk text and embeddings are copied by value,
+with **zero embedding-API calls**, so a brand-new visitor can ask the "answerable" preset question
+immediately without waiting on ingestion. See `app/services/demo_seed.py` in the backend.
+
+Ephemeral tenants are swept once older than `settings.ephemeral_tenant_ttl_minutes` (default 60).
+The sweep runs lazily inside `POST /auth/demo-session` itself (no cron needed); see
+`app/services/tenant_cleanup.py`.
+
 ## Local run
 
 ```bash
@@ -11,7 +57,15 @@ npm install
 npm run dev
 ```
 
-Opens at `http://localhost:5173`.
+Opens at `http://localhost:5173`, but this only serves the static UI. The `/api/*` proxy
+functions are Vercel-specific and **do not run** under plain `vite dev`; any live-demo action will
+show the "couldn't reach the demo" state. To test the full flow locally, use the Vercel CLI instead:
+
+```bash
+npx vercel dev
+```
+
+This serves the Vite app and the `/api/*` functions together, reading env vars from `.env`.
 
 ## Environment variables
 
@@ -19,74 +73,23 @@ Copy `.env.example` to `.env` and fill in:
 
 | Variable | Purpose |
 |---|---|
-| `VITE_API_BASE` | Base URL of the deployed DocuMind API (e.g. `https://documind-oyhv.onrender.com`). |
-| `VITE_DEMO_API_KEY` | API key for a dedicated **demo tenant** the live Demo section calls. See below. |
+| `DOCUMIND_API_BASE` | Base URL of the deployed DocuMind API. **No `VITE_` prefix**: this must stay server-only. Read via `process.env` inside `api/*.js`, never inlined into the client bundle. |
 
-## CORS: required before the demo works
+There is no client-side API key anywhere in this project. Don't add one back.
 
-The backend has no CORS configuration by default, so every browser call from this frontend gets
-blocked until it's added. The fix lives in the main repo:
+## CORS
 
-- `app/main.py`: adds `CORSMiddleware`, origins read from `settings.frontend_origins`
-  (`app/config.py`), a comma-separated `FRONTEND_ORIGINS_RAW` env var (default
-  `http://localhost:5173`).
-- `app/api/routers/query.py`: the `GET /query/stream` SSE `sources` event now includes each
-  chunk's `confidence`, matching `POST /query`. Without this the streaming demo can show source
-  chunks but not their scores.
-
-Both are already deployed to the live backend. Add this frontend's deployed origin to the
-backend's `FRONTEND_ORIGINS_RAW` env var (comma-separated alongside `http://localhost:5173`) once
-it has a real host, and redeploy the backend.
-
-## Demo key: env var vs. proxy
-
-The Demo section needs an API key to call the backend from the browser. Any key placed in client
-JS is publicly readable and can spend real Gemini quota, so this project does **not** hardcode a
-privileged key. Two options, in order of how this repo is set up:
-
-1. **Env-var demo key (what's implemented here).** `VITE_DEMO_API_KEY` is baked in at build time
-   and used for every visitor. It belongs to a **dedicated demo tenant** with a tight per-key
-   rate limit (the backend already rate-limits per key, see `rate_limit_requests` /
-   `rate_limit_window_seconds` in `app/config.py`) and a small Gemini budget you're comfortable
-   losing to abuse. Simple, but the key is visible in the built JS bundle to anyone who looks.
-2. **Serverless proxy (recommended for a real production demo).** A tiny function (Vercel/Netlify/
-   Cloudflare Worker) that holds the key server-side, forwards `/query`, `/query/stream`, and
-   `/documents` calls, and adds the `X-API-Key` header itself. The browser never sees the key.
-   Not implemented here to keep the deliverable to a static frontend, but `src/api/client.js` is
-   the only place that would need to change (point `VITE_API_BASE` at the proxy instead of the
-   backend directly).
-
-### Known limitation of the shared demo tenant
-
-Every visitor shares the same tenant (and the same document corpus), because the backend scopes
-retrieval by tenant, not by browser session. If someone uploads their own file, later visitors'
-questions can retrieve chunks from it too. Fine for a portfolio demo; not something you'd want for
-a real multi-user product without adding per-session scoping on the backend.
-
-## Seeding the demo tenant
-
-The Demo section expects the tenant behind `VITE_DEMO_API_KEY` to already have at least one
-`ready` document, that's what lets a first-time visitor ask a question immediately instead of
-uploading first. The live demo tenant is already seeded with a sample Northwind employee handbook.
-To (re)seed it, e.g. after rotating the key:
-
-```bash
-curl -X POST https://<api-base>/auth/keys -H "Content-Type: application/json" \
-  -d '{"tenant_name":"demo"}'
-# -> {"api_key": "...", "tenant_id": ...}
-
-curl -X POST https://<api-base>/documents -H "X-API-Key: <api_key>" \
-  -F "file=@northwind-employee-handbook.txt"
-```
-
-Poll `GET /documents/{id}` until `status` is `ready`, then put `api_key` in `VITE_DEMO_API_KEY`.
+Not needed for the deployed proxy flow: `/api/*` calls are same-origin. The backend's
+`CORSMiddleware` (`app/main.py`, allowlist via `FRONTEND_ORIGINS_RAW`) still exists for direct
+`npm run dev` testing against the live backend and is harmless to leave, but production traffic
+never needs it now.
 
 ## Cold starts
 
 The backend runs on Render's free tier, which sleeps after 15 minutes idle and takes 30-50s to
 wake on the first request. `src/api/client.js` races every request against a short timeout and
-surfaces a "waking the demo up" state via `onColdStart` instead of a hung spinner, see
-`Demo.jsx`.
+surfaces a "waking the demo up" state via `onColdStart` instead of a hung spinner (see
+`Demo.jsx`). The proxy functions' 60s `maxDuration` covers this.
 
 ## Citation highlighting is a heuristic, not a backend guarantee
 
@@ -99,8 +102,15 @@ card is a separate, hardcoded illustration and isn't affected by this.
 
 ## Deploy
 
-This is a static build (`npm run build` → `dist/`); any static host works (Vercel, Netlify,
-Cloudflare Pages, GitHub Pages). Point it at the live API via `VITE_API_BASE` and set
-`VITE_DEMO_API_KEY` as a build-time environment variable on the host. Remember to add the
-deployed origin to the backend's `FRONTEND_ORIGINS_RAW` and redeploy the backend, or every request
-will fail CORS.
+This has to be deployed as a **Vercel project** (or an equivalent platform with the same
+serverless-function-alongside-static-build model). A plain static host (GitHub Pages, a CDN
+bucket) can't run the `api/` proxy functions the demo depends on.
+
+```bash
+npx vercel link
+npx vercel env add DOCUMIND_API_BASE production   # and preview, development
+npx vercel --prod
+```
+
+If you fork this to a domain other than `*.vercel.app`, nothing on the backend needs to change:
+the proxy calls the backend server-side, so the backend's CORS allowlist is irrelevant to it.

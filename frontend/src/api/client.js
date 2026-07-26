@@ -1,5 +1,10 @@
-const API_BASE = import.meta.env.VITE_API_BASE;
-const DEMO_API_KEY = import.meta.env.VITE_DEMO_API_KEY;
+// Every call here is same-origin, to this app's own /api/* proxy
+// functions (see frontend/api/), not directly to the DocuMind backend.
+// The proxy mints a per-visitor ephemeral tenant server-side and holds
+// its key in an httpOnly cookie the browser sends automatically - no API
+// key is ever readable from client JS. See frontend/api/_lib/session.js
+// and frontend/README.md for why (a single shared, client-visible demo
+// key previously let any visitor read any other visitor's uploads).
 
 const COLD_START_MESSAGE =
   "Couldn't reach the demo. The free-tier host may be waking up (this can take 30-50s). Retrying...";
@@ -10,10 +15,6 @@ class ApiError extends Error {
     this.status = status;
     this.coldStart = coldStart;
   }
-}
-
-function authHeaders(apiKey = DEMO_API_KEY) {
-  return { "X-API-Key": apiKey };
 }
 
 /**
@@ -51,53 +52,32 @@ async function parseJsonOrThrow(res) {
   return res.json();
 }
 
-export async function createTenantKey(tenantName, opts) {
-  const res = await fetchWithWakeHint(
-    `${API_BASE}/auth/keys`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tenant_name: tenantName }),
-    },
-    opts
-  );
-  return parseJsonOrThrow(res);
-}
-
-export async function uploadDocument(file, { apiKey, ...opts } = {}) {
+export async function uploadDocument(file, opts = {}) {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetchWithWakeHint(
-    `${API_BASE}/documents`,
-    { method: "POST", headers: authHeaders(apiKey), body: form },
-    opts
-  );
+  const res = await fetchWithWakeHint("/api/documents", { method: "POST", body: form }, opts);
   return parseJsonOrThrow(res);
 }
 
-export async function getDocument(id, { apiKey, ...opts } = {}) {
-  const res = await fetchWithWakeHint(
-    `${API_BASE}/documents/${id}`,
-    { headers: authHeaders(apiKey) },
-    opts
-  );
+export async function getDocument(id, opts = {}) {
+  const res = await fetchWithWakeHint(`/api/documents?id=${id}`, {}, opts);
   return parseJsonOrThrow(res);
 }
 
-export async function listDocuments({ apiKey, ...opts } = {}) {
-  const res = await fetchWithWakeHint(`${API_BASE}/documents`, { headers: authHeaders(apiKey) }, opts);
+export async function listDocuments(opts = {}) {
+  const res = await fetchWithWakeHint("/api/documents", {}, opts);
   return parseJsonOrThrow(res);
 }
 
 /**
- * Polls GET /documents/{id} every ~1.5s until status is "ready" or
+ * Polls GET /api/documents?id={id} every ~1.5s until status is "ready" or
  * "failed". Returns the final document. `onTick` fires on every poll so
  * the caller can show interim state (chunk_count, "processing", ...).
  */
-export async function pollDocumentUntilReady(id, { apiKey, onTick, intervalMs = 1500, timeoutMs = 120000 } = {}) {
+export async function pollDocumentUntilReady(id, { onTick, intervalMs = 1500, timeoutMs = 120000 } = {}) {
   const startedAt = Date.now();
   for (;;) {
-    const doc = await getDocument(id, { apiKey });
+    const doc = await getDocument(id);
     onTick?.(doc);
     if (doc.status === "ready" || doc.status === "failed") return doc;
     if (Date.now() - startedAt > timeoutMs) {
@@ -107,38 +87,18 @@ export async function pollDocumentUntilReady(id, { apiKey, onTick, intervalMs = 
   }
 }
 
-export async function askQuestion(question, { sessionId, apiKey, ...opts } = {}) {
-  const res = await fetchWithWakeHint(
-    `${API_BASE}/query`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeaders(apiKey) },
-      body: JSON.stringify({ question, session_id: sessionId ?? undefined }),
-    },
-    opts
-  );
-  return parseJsonOrThrow(res);
-}
-
-export async function getHistory(sessionId, { apiKey, ...opts } = {}) {
-  const res = await fetchWithWakeHint(
-    `${API_BASE}/history/${sessionId}`,
-    { headers: authHeaders(apiKey) },
-    opts
-  );
-  return parseJsonOrThrow(res);
-}
-
 /**
- * Streams GET /query/stream via fetch + ReadableStream instead of
- * EventSource, because EventSource can't send the X-API-Key header the
- * backend requires. SSE frames ("event: name\ndata: json\n\n") are parsed
- * by hand off the decoded chunk buffer.
+ * Streams GET /api/query-stream via fetch + ReadableStream instead of
+ * EventSource, because EventSource can't send the cookie-derived auth
+ * this proxy relies on for anything but simple GETs in some browsers,
+ * and can't be aborted mid-stream either. SSE frames
+ * ("event: name\ndata: json\n\n") are parsed by hand off the decoded
+ * chunk buffer.
  *
- * handlers: { onSources, onSession, onDelta, onDone, onColdStart }
+ * handlers: { onSources, onSession, onDelta, onDone, onColdStart, onError }
  * Returns an abort() function.
  */
-export function streamQuery(question, { sessionId, apiKey, ...handlers } = {}) {
+export function streamQuery(question, { sessionId, ...handlers } = {}) {
   const controller = new AbortController();
   const params = new URLSearchParams({ question });
   if (sessionId) params.set("session_id", sessionId);
@@ -147,8 +107,8 @@ export function streamQuery(question, { sessionId, apiKey, ...handlers } = {}) {
     let res;
     try {
       res = await fetchWithWakeHint(
-        `${API_BASE}/query/stream?${params.toString()}`,
-        { headers: authHeaders(apiKey), signal: controller.signal },
+        `/api/query-stream?${params.toString()}`,
+        { signal: controller.signal },
         { onColdStart: handlers.onColdStart, wakeTimeoutMs: 6000 }
       );
     } catch (err) {
