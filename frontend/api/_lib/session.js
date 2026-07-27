@@ -20,11 +20,19 @@ function parseCookie(cookieHeader, name) {
   return pair ? decodeURIComponent(pair.slice(name.length + 1)) : null;
 }
 
-// Vercel's edge sets this reliably for the browser->proxy hop; the
-// proxy->backend hop is a fresh fetch with no such header otherwise.
+// Vercel's edge is the only hop in front of this function, and a proxy
+// appends the IP it saw the connection from rather than replacing
+// whatever was already in the header - so the LAST entry is the one
+// Vercel's own edge observed directly and can't be forged by the
+// client. The FIRST entry is whatever the client's own request set,
+// which used to be trusted here and let a scripted caller claim a
+// fresh IP on every request to dodge the per-IP demo-session limit.
 function _visitorIp(req) {
   const xff = req.headers["x-forwarded-for"];
-  if (xff) return xff.split(",")[0].trim();
+  if (xff) {
+    const hops = xff.split(",").map((s) => s.trim()).filter(Boolean);
+    if (hops.length) return hops[hops.length - 1];
+  }
   return req.socket?.remoteAddress ?? "unknown";
 }
 
