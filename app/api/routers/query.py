@@ -1,4 +1,5 @@
 import json
+import logging
 import time
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -11,8 +12,16 @@ from app.api.security_scheme import api_key_header
 from app.db.session import SessionLocal
 from app.schemas.query import MAX_QUESTION_LENGTH, QueryRequest, QueryResponse
 from app.services.answering import REFUSAL_ANSWER, stream_answer_question
-from app.services.query_service import answer_query, log_query, resolve_session_id
+from app.services.query_cache import get_cached_answer, set_cached_answer
+from app.services.query_service import (
+    GENERATION_FAILURE_ANSWER,
+    answer_query,
+    log_query,
+    resolve_session_id,
+)
 from app.services.reranking import retrieve_ranked
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/query", tags=["query"])
 
@@ -41,17 +50,34 @@ def _log_streamed_query(
     confidence: float | None,
     started_at: float,
     correlation_id: str,
+    cached_hit: bool,
+    failure: dict,
 ) -> None:
     """Runs as a StreamingResponse `background` task, after the SSE body
-    finishes sending, so accumulated_answer is fully populated and
-    latency can be measured end-to-end. Opens its own session, same as
-    ingestion.py's process_document: the request's own session is torn
-    down once streaming starts, well before this runs.
+    finishes sending, so accumulated_answer and failure are fully
+    populated and latency can be measured end-to-end. Opens its own
+    session, same as ingestion.py's process_document: the request's own
+    session is torn down once streaming starts, well before this runs.
+
+    failure is a dict, not a bool, because BackgroundTask binds its
+    kwargs at construction time, before the generator has run - a plain
+    bool captured then would always read False. Passing the same mutable
+    dict the generator writes to (see event_stream's except clause) lets
+    this read its final state instead.
+
+    Skips caching on a cache replay (already cached, re-caching is a
+    no-op at best) and on a generation failure (a transient failure
+    shouldn't poison repeat questions) - mirrors query_service.answer_query's
+    non-streaming cache-aside behavior.
     """
+    full_answer = "".join(accumulated_answer)
+    if not cached_hit and not failure["happened"]:
+        set_cached_answer(tenant_id, question, full_answer, chunks, confidence)
+
     db = SessionLocal()
     try:
         log_query(
-            db, tenant_id, session_id, question, chunks, "".join(accumulated_answer),
+            db, tenant_id, session_id, question, chunks, full_answer,
             confidence, started_at, correlation_id,
         )
     finally:
@@ -65,9 +91,9 @@ async def query_documents_stream(
     db: Session = Depends(get_db),
     session_id: str | None = None,
 ):
-    """SSE variant of POST /query: retrieval happens up front like the
-    non-streaming path, but the answer streams to the client token by
-    token as Gemini generates it.
+    """SSE variant of POST /query: cache-aside up front like the
+    non-streaming path; on a miss, retrieval happens up front too, but
+    the answer streams to the client token by token as Gemini generates it.
 
     GET instead of POST is deliberate: the browser's native EventSource
     API can only issue GET with no body, so params travel as a query
@@ -78,8 +104,12 @@ async def query_documents_stream(
     started_at = time.perf_counter()
     resolved_session_id = resolve_session_id(session_id)
 
-    chunks = retrieve_ranked(db, tenant_id, question)
+    cached = get_cached_answer(tenant_id, question)
+    chunks = cached.sources if cached is not None else retrieve_ranked(db, tenant_id, question)
+    confidence = cached.confidence if cached is not None else (chunks[0].confidence if chunks else None)
+
     accumulated_answer: list[str] = []
+    failure = {"happened": False}
 
     def event_stream():
         sources_payload = [
@@ -95,13 +125,32 @@ async def query_documents_stream(
         yield f"event: sources\ndata: {json.dumps(sources_payload)}\n\n"
         yield f"event: session\ndata: {json.dumps({'session_id': resolved_session_id})}\n\n"
 
-        if not chunks:
+        if cached is not None:
+            accumulated_answer.append(cached.answer)
+            yield f"event: delta\ndata: {json.dumps({'text': cached.answer})}\n\n"
+        elif not chunks:
             accumulated_answer.append(REFUSAL_ANSWER)
             yield f"event: delta\ndata: {json.dumps({'text': REFUSAL_ANSWER})}\n\n"
         else:
-            for delta in stream_answer_question(question, chunks):
-                accumulated_answer.append(delta)
-                yield f"event: delta\ndata: {json.dumps({'text': delta})}\n\n"
+            try:
+                for delta in stream_answer_question(question, chunks):
+                    accumulated_answer.append(delta)
+                    yield f"event: delta\ndata: {json.dumps({'text': delta})}\n\n"
+            except Exception:
+                # A dropped connection or a Gemini failure mid-stream both
+                # land here. Without this, the generator would just stop -
+                # no "done" event, a truncated answer logged as if it were
+                # complete, and the client left hanging with no signal it
+                # failed (see query_service.answer_query for the
+                # equivalent non-streaming 503 path this mirrors).
+                logger.exception(
+                    "query_documents_stream: generation failed mid-stream for tenant %s",
+                    tenant_id,
+                )
+                failure["happened"] = True
+                accumulated_answer.clear()
+                accumulated_answer.append(GENERATION_FAILURE_ANSWER)
+                yield f"event: error\ndata: {json.dumps({'message': GENERATION_FAILURE_ANSWER})}\n\n"
 
         yield "event: done\ndata: {}\n\n"
 
@@ -112,9 +161,11 @@ async def query_documents_stream(
         question=question,
         chunks=chunks,
         accumulated_answer=accumulated_answer,
-        confidence=chunks[0].confidence if chunks else None,
+        confidence=confidence,
         started_at=started_at,
         correlation_id=correlation_id,
+        cached_hit=cached is not None,
+        failure=failure,
     )
 
     return StreamingResponse(

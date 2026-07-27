@@ -168,6 +168,7 @@ function dispatchFrame(frame, handlers) {
   if (event === "sources") handlers.onSources?.(payload);
   else if (event === "session") handlers.onSession?.(payload.session_id);
   else if (event === "delta") handlers.onDelta?.(payload.text);
+  else if (event === "error") handlers.onError?.(new ApiError(payload.message));
   else if (event === "done") handlers.onDone?.();
 }
 
