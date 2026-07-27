@@ -130,6 +130,18 @@ def test_demo_session_forwarded_ip_rejected_with_wrong_secret(client, monkeypatc
     assert client.post("/auth/demo-session", headers=headers).status_code == 200
     assert client.post("/auth/demo-session", headers=headers).status_code == 429
 
+def test_demo_session_refuses_new_mints_once_at_capacity(client, monkeypatch):
+    """max_live_ephemeral_tenants caps concurrent demo tenants
+    independent of the per-IP rate limit above - each mint clones the
+    seed corpus by value, so unbounded concurrent tenants is unbounded
+    storage growth even if no single IP is abusing the mint rate."""
+    monkeypatch.setattr("app.config.settings.max_live_ephemeral_tenants", 2)
+
+    statuses = [client.post("/auth/demo-session").status_code for _ in range(3)]
+
+    assert statuses == [200, 200, 503]
+
+
 def test_sweep_deletes_expired_ephemeral_tenants_on_next_session_creation(
     client, db_session, monkeypatch
 ):

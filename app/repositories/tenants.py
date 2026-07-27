@@ -25,6 +25,13 @@ def get_by_name(db: Session, name: str) -> Tenant | None:
 def get_by_id(db: Session, tenant_id: int) -> Tenant | None:
     return db.query(Tenant).filter(Tenant.id == tenant_id).first()
 
+def count_ephemeral(db: Session) -> int:
+    """Live (not-yet-expired-or-swept) ephemeral tenant count, used to
+    cap concurrent demo tenants - see services/demo_session.py. Called
+    right after a sweep, so this reflects tenants still inside the TTL
+    window, not ones merely awaiting cleanup."""
+    return db.query(Tenant).filter(Tenant.is_ephemeral.is_(True)).count()
+
 def get_expired_ephemeral(db: Session, ttl_minutes: int) -> list[Tenant]:
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=ttl_minutes)
     return (

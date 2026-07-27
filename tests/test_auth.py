@@ -26,6 +26,20 @@ def test_correlation_id_header_present_on_every_response(client):
 
     assert "x-correlation-id" in response.headers
 
+def test_issue_key_rate_limited_by_ip(client, monkeypatch):
+    monkeypatch.setattr("app.config.settings.auth_keys_rate_limit", 2)
+
+    statuses = [
+        client.post("/auth/keys", json={"tenant_name": f"acme-{i}"}).status_code
+        for i in range(4)
+    ]
+
+    assert statuses == [200, 200, 429, 429]
+
+def test_issue_key_rejects_tenant_name_over_max_length(client):
+    response = client.post("/auth/keys", json={"tenant_name": "x" * 256})
+    assert response.status_code == 422
+
 def test_rate_limit_returns_429_after_limit_exceeded(client, monkeypatch):
     monkeypatch.setattr("app.config.settings.rate_limit_requests", 3)
 

@@ -9,6 +9,14 @@ class Settings(BaseSettings):
     rate_limit_requests: int = 60
     rate_limit_window_seconds: int = 60
 
+    # POST /auth/keys is unauthenticated by necessity (nothing exists yet
+    # to authenticate with), same as /auth/demo-session, so it needs its
+    # own per-IP cap independent of RateLimitMiddleware (which only
+    # limits requests that already resolved an api_key_id). Otherwise a
+    # script can mint unlimited tenants+keys for free.
+    auth_keys_rate_limit: int = 20
+    auth_keys_rate_limit_window_seconds: int = 3600
+
     gemini_api_key: str
     gemini_embedding_model: str = "gemini-embedding-001"
     # gemini-3.6-flash's free tier caps at 20 calls/day, not enough for
@@ -69,6 +77,14 @@ class Settings(BaseSettings):
     # re-embedding) into every new ephemeral demo tenant - see
     # services/demo_seed.py.
     seed_tenant_name: str = "demo"
+    # Hard ceiling on concurrently live (within-TTL) ephemeral tenants.
+    # The per-IP demo_session_rate_limit bounds one visitor's mint rate,
+    # but not the total number of distinct visitors inside one TTL
+    # window - each mint clones the seed corpus by value, so unbounded
+    # concurrent tenants is unbounded storage growth. Checked after the
+    # lazy sweep, so this counts tenants genuinely still alive, not ones
+    # merely awaiting cleanup.
+    max_live_ephemeral_tenants: int = 200
 
     # Shared secret with frontend/api/ (Vercel), same value as its
     # DOCUMIND_PROXY_SHARED_SECRET. Lets auth.py's _client_ip trust a

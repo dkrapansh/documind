@@ -15,8 +15,34 @@ from app.services.demo_session import mint_demo_session
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+# Neither in-memory limiter dict below ever evicts a key once seen, only
+# resets its window - unbounded in principle over a long-running
+# process's lifetime. A full clear once implausibly large is a blunt
+# tool but simpler and safer than partial-eviction bookkeeping for a cap
+# this unlikely to be hit at demo scale.
+_MAX_TRACKED_KEYS = 50_000
+
+# In-memory, single-instance limiter, same tradeoff and pattern as the
+# demo-session one below - /auth/keys is the other route that has to
+# stay unauthenticated (there's no key yet to authenticate with).
+_create_key_counts: dict[str, tuple[float, int]] = defaultdict(lambda: (0.0, 0))
+
 @router.post("/keys", response_model=CreateKeyResponse)
-def issue_key(payload: CreateKeyRequest, db: Session = Depends(get_db)):
+def issue_key(payload: CreateKeyRequest, request: Request, db: Session = Depends(get_db)):
+    ip = request.client.host if request.client else "unknown"
+
+    if len(_create_key_counts) > _MAX_TRACKED_KEYS:
+        _create_key_counts.clear()
+
+    now = time.time()
+    window_start, count = _create_key_counts[ip]
+    if now - window_start > settings.auth_keys_rate_limit_window_seconds:
+        window_start, count = now, 0
+    count += 1
+    _create_key_counts[ip] = (window_start, count)
+    if count > settings.auth_keys_rate_limit:
+        raise RateLimitExceededException()
+
     tenant = create_tenant(db, name=payload.tenant_name)
     _, raw_key = create_api_key(db, tenant_id = tenant.id)
     return CreateKeyResponse(api_key=raw_key, tenant_id=tenant.id)
@@ -65,6 +91,10 @@ def create_demo_session(request: Request, db: Session = Depends(get_db)):
     the single shared demo key used to allow.
     """
     ip = _client_ip(request)
+
+    if len(_demo_session_counts) > _MAX_TRACKED_KEYS:
+        _demo_session_counts.clear()
+
     now = time.time()
     window_start, count = _demo_session_counts[ip]
     if now - window_start > settings.demo_session_rate_limit_window_seconds:

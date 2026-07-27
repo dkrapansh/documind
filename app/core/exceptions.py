@@ -41,6 +41,10 @@ class EphemeralTenantForbiddenException(AppException):
     status_code = 403
     detail = "Ephemeral demo tenants cannot start evaluation runs"
 
+class DemoCapacityExceededException(AppException):
+    status_code = 503
+    detail = "The public demo is at capacity right now. Please try again in a few minutes."
+
 class PayloadTooLargeException(AppException):
     status_code = 413
 
