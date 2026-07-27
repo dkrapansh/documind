@@ -2,14 +2,13 @@
 
 A multi-tenant document Q&A API. Upload PDFs, Word docs, or text files, ask
 questions in plain English, and get answers grounded in the actual content,
-with the source chunks cited and a hard refusal when the documents don't
-have the answer.
+with sources cited and a hard refusal when the answer isn't in the documents.
 
 API live at [documind-oyhv.onrender.com](https://documind-oyhv.onrender.com).
-Landing page and working demo at
+Landing page and demo at
 [documind-krapansh.vercel.app](https://documind-krapansh.vercel.app).
-Render's free tier sleeps after inactivity, so the first request after a
-while can take 30 to 50 seconds to wake it up.
+The backend sleeps after inactivity on Render's free tier, so the first
+request can take 30 to 50 seconds.
 
 ![CI](https://github.com/dkrapansh/documind/actions/workflows/ci.yml/badge.svg)
 
@@ -30,22 +29,22 @@ curl -X POST https://documind-oyhv.onrender.com/query \
 
 ## What makes this different from a tutorial RAG app
 
-- **Tenant isolation is enforced in SQL**, not checked after the fact in
-  Python. Every query filters by `tenant_id` inside the database call itself.
-- **Retrieval combines two strategies**, dense embeddings and keyword search
+- **Tenant isolation lives in SQL**, not in application code. Every query
+  filters by `tenant_id` inside the database call itself.
+- **Retrieval combines two methods**: dense embeddings and keyword search
   (BM25), instead of trusting one.
-- **The system refuses to answer** when retrieval confidence is low, instead
-  of letting the LLM guess.
+- **The system refuses to answer** when it isn't confident, instead of
+  letting the model guess.
 - **Quality is measured offline** with a real RAGAS evaluation harness,
-  instead of eyeballing a few examples.
+  not by eyeballing a few examples.
 
 ## Architecture
 
-One FastAPI service, layered like a much bigger system would be: routers
-handle HTTP only, services hold the logic, repositories are the only code
-allowed to touch the database, and clients wrap every external API call.
-Services never import SQLAlchemy directly. That constraint is what keeps
-the retrieval pipeline unit-testable without a live Postgres instance.
+One FastAPI service, layered the way a much bigger system would be: routers
+handle HTTP, services hold the logic, repositories are the only code that
+touches the database, and clients wrap every external API call. Services
+never import SQLAlchemy directly, which is what keeps the retrieval
+pipeline testable without a live Postgres instance.
 
 ```mermaid
 flowchart TB
@@ -81,10 +80,10 @@ flowchart TB
     Ans --> Gemini
 ```
 
-Vectors and metadata live in the same Postgres database via `pgvector`,
+Vectors and metadata live in the same Postgres database through `pgvector`,
 not a separate vector store. A document, its chunks, and their embeddings
-all commit in one transaction, so there is no dual-write problem where a
-chunk exists but its embedding failed to save.
+commit in one transaction, so a chunk can never exist without its
+embedding.
 
 ## Project layout
 
@@ -135,20 +134,19 @@ flowchart LR
     Store --> Return
 ```
 
-Dense retrieval (embedding similarity) is good at semantic matches and bad
-at exact terms, like an error code or ticket number. BM25 is the opposite:
-strong on keyword overlap, blind to paraphrasing. Reciprocal Rank Fusion
-merges the two ranked lists by position, not raw score, since cosine
-distance and a BM25 score are not on comparable scales.
+Dense retrieval is good at meaning and bad at exact terms, like an error
+code. BM25 is the opposite: strong on keyword overlap, blind to
+paraphrasing. Reciprocal Rank Fusion combines both rankings by position,
+not raw score, since cosine distance and a BM25 score aren't on the same
+scale.
 
-The fused candidates go through a real cross-encoder rerank (question and
-chunk read together in one pass), which is too slow to run over a whole
-corpus but cheap over the handful RRF narrows to. If the best-reranked
-chunk still scores below the confidence threshold, the system refuses
-before the LLM is ever called, so a refusal costs nothing beyond retrieval.
-The system prompt also tells the model to treat retrieved text as data,
-never as instructions, so a document containing "ignore previous
-instructions" cannot hijack the response.
+The fused results go through a real cross-encoder rerank, too slow for a
+whole corpus but cheap for the handful of candidates RRF narrows things
+down to. If the best result still scores below the confidence threshold,
+the system refuses before calling the model, so a refusal costs nothing
+beyond retrieval. The system prompt also tells the model to treat
+retrieved text as data, never as instructions, so a document that says
+"ignore previous instructions" can't hijack the response.
 
 ## How ingestion works
 
@@ -166,31 +164,29 @@ flowchart LR
 ```
 
 Upload returns immediately with a `pending` status. Chunking, embedding,
-and storage run in a background task, since embedding a large document can
-take longer than a client should wait synchronously. The client polls
-`GET /documents/{id}` for `ready` or `failed`. Re-uploading identical
-content is a no-op by content hash, so it never burns embedding calls twice.
-Uploads are capped at 20MB, read in bounded chunks rather than one
-in-memory `read()` call, since the backend is directly reachable and runs
-on a memory-limited instance.
+and storage happen in a background task, since embedding a large document
+can take longer than a client should wait. The client polls
+`GET /documents/{id}` until it's `ready` or `failed`. Re-uploading the
+same file is a no-op, checked by content hash, so it never wastes an
+embedding call twice. Uploads are capped at 20MB and read in small
+chunks instead of all at once, since the backend runs on a
+memory-limited instance.
 
 ## Multi-tenancy
 
-Every table except `tenants` carries a `tenant_id`, and every query filters
-on it inside the SQL, in the repository layer, never as a post-fetch filter
-in Python. A post-fetch filter is one deleted line away from leaking
-another tenant's data; a query that never had those rows in its result set
-cannot leak them regardless of what the calling code does. This is tested
-directly: two tenants get chunks with the identical embedding vector on
-purpose, so a passing test proves the `tenant_id` filter is what keeps them
-apart, not a coincidence of vector distance.
+Every table except `tenants` carries a `tenant_id`, and every query
+filters on it inside the SQL, not as a check after the data comes back.
+A filter applied after the fact is one deleted line away from leaking
+another tenant's data. A query that never fetched those rows can't leak
+them, no matter what the code around it does. This is tested directly:
+two tenants get chunks with the exact same embedding on purpose, so a
+passing test proves the `tenant_id` filter is doing the work, not luck.
 
 ## Evaluation
 
 A hand-built golden dataset against a fictional ten-document corpus.
-`eval/run_eval.py` runs every item through the real production retrieval
-and answering functions, not a reimplementation, and scores the results
-with RAGAS.
+`eval/run_eval.py` runs every question through the real retrieval and
+answering code, not a copy of it, and scores the results with RAGAS.
 
 | Metric | v2 (30 items) | v3 (41 items) |
 |---|---|---|
@@ -199,82 +195,65 @@ with RAGAS.
 | Context precision | 0.79 | 0.73 |
 | Refusal accuracy | 6/6 (100%) | 6/8 (75%) |
 
-The confidence threshold was tuned against measured data, not picked by
-hand: an earlier guess correctly refused 3 of 6 genuinely unanswerable
-questions, and retuning brought that to 6 of 6 with zero change to answer
-quality on the 24 answerable questions. Full history is in
-[`eval/RESULTS.md`](eval/RESULTS.md).
+The confidence threshold came from measured data, not a guess: an
+earlier value refused 3 of 6 genuinely unanswerable questions, and
+retuning it brought that to 6 of 6 with no change to the 24 answerable
+ones. Full history is in [`eval/RESULTS.md`](eval/RESULTS.md).
 
-v2's 1.0 faithfulness score was real but easy to over-read: every v2
-answer was close to a verbatim echo of one source sentence, and every
-refusal item was on a topic with no lexical overlap to the corpus at
-all, so neither number was tested anywhere near its real boundary.
-v3 (41 items) adds arithmetic questions the corpus never states outright,
-questions that share vocabulary with a real sentence but ask about the
-excluded case, cross-document comparisons, multi-hop elimination
-questions, and two near-miss refusals that are topically adjacent to
-real content instead of unrelated to it.
+v2's perfect faithfulness score was real but easy to over-read. Every
+v2 answer was close to a verbatim copy of one sentence, and every
+refusal question had nothing to do with the corpus at all, so nothing
+was tested near its real limit. v3 adds arithmetic the corpus never
+states outright, questions that share words with a real sentence but
+ask about the case it excludes, cross-document comparisons, multi-hop
+questions, and two refusal questions that sit close to real content
+instead of being unrelated to it.
 
-v3's refusal accuracy dropping to 6/8 is exactly what those near-miss
-items were built to expose: both misses are the two new near-miss
-questions, whose heavy lexical overlap with a real chunk clears the 0.7
-confidence gate before the LLM ever runs. In both cases the model's
-actual answer was still correct and non-hallucinatory (it said the
-specific fact wasn't in the documents), just in different words than the
-exact refusal string this metric checks against - so the system never
-gave a wrong answer, the deterministic pre-LLM gate just didn't fire
-where it ideally should have. Faithfulness barely moved even under
-arithmetic and multi-hop reasoning. Full per-category breakdown,
-including why context_precision dropped and what that pattern looked
-like back in v2, is in
-[`eval/RESULTS.md`](eval/RESULTS.md).
+The drop in refusal accuracy to 6/8 in v3 is the interesting result.
+Both misses are the two new near-miss questions: their overlap with
+real content was strong enough to clear the confidence gate before the
+model ever ran. But in both cases the model's actual answer was still
+correct and honest. It just said so in its own words instead of
+matching the exact sentence this check looks for, so the system never
+gave a wrong answer, it just paid for a model call it didn't need to.
+Faithfulness barely moved even under arithmetic and multi-hop
+questions. Full breakdown, including why context precision dropped, is
+in [`eval/RESULTS.md`](eval/RESULTS.md).
 
-## Security and reliability decisions
+## Security and reliability
 
-- **The public demo used to share one API key** across every visitor,
-  baked into the client bundle. Since retrieval is scoped by tenant, one
-  key meant one shared tenant, so one visitor's uploads were retrievable
-  by anyone else's questions. Fixed architecturally: a same-origin Vercel
-  proxy (`frontend/api/`) mints a fresh, isolated tenant per visitor and
-  holds its key in an httpOnly cookie the browser never sees. Each new
-  tenant clones the seed corpus's chunks and embeddings by value, at zero
-  embedding cost, so a fresh visitor can ask a question immediately.
-- **The demo-session mint endpoint is rate-limited by IP**, but a client
-  can set `X-Forwarded-For` to anything, and every request relayed through
-  the proxy used to look like it came from the proxy's own shared egress
-  IP. The backend now only trusts a forwarded visitor IP when it is paired
-  with a shared secret known only to the proxy, so a direct caller cannot
-  forge a fresh IP, and real visitors no longer collide on one bucket. The
-  proxy itself also used to read the client-spoofable *first* hop of
-  `X-Forwarded-For`; it now reads the *last* hop, the one Vercel's own
-  edge appended and the only one a caller can't forge.
-- **A hard cap (`max_live_ephemeral_tenants`) limits concurrently live
-  demo tenants**, independent of the per-IP mint rate limit above. Each
-  mint clones the seed corpus by value, so unbounded distinct visitors
-  within one TTL window is unbounded storage growth even if no single IP
-  is over its own limit.
-- **`POST /auth/keys` is rate-limited and length-bounded per IP**, the
-  same tradeoff as the demo-session endpoint: it has to stay
-  unauthenticated (there's no key yet to check), so nothing else stopped
-  a script from minting unlimited tenants and keys for free.
-- **`POST /eval/runs` is closed to ephemeral demo tenants.** It ingests
-  the golden corpus and fires real Gemini calls, and demo tenants are free
-  to mint, so leaving it open would let anyone script quota exhaustion.
-- **A generation failure now returns a clean 503** and is still logged to
-  `query_logs`, instead of an unhandled 500 that left no trace and never
-  hit the cache with a poisoned answer. `GET /query/stream` has the same
-  gap closed a different way: a failure mid-stream now ends the SSE
-  connection with an explicit `error` event instead of just stopping, and
-  the partial answer is logged as the failure, not cached as if it were
-  a real one.
-- **Ephemeral tenants are swept on every app boot**, in addition to the
-  existing sweep on new demo traffic, since Render has no cron and an idle
-  instance would otherwise leave abandoned tenants around indefinitely.
-- **The reranker used to be a PyTorch CrossEncoder**, which cost about
-  555MB of memory just to load, over Render free tier's 512MB ceiling.
-  Replaced with `flashrank` (ONNX Runtime, same class of model), which
-  costs about 120MB. The confidence threshold was retuned to match, since
-  flashrank's scores are a 0 to 1 scale, not the old raw logits.
+- **The public demo used to share one API key** across every visitor.
+  Since retrieval is scoped by tenant, that meant one shared tenant, so
+  any visitor could see any other visitor's uploads. Fixed with a
+  same-origin proxy that mints a fresh, isolated tenant per visitor and
+  keeps the key in an httpOnly cookie the browser never sees.
+- **The demo-session endpoint is rate-limited by IP**, and that IP has
+  to come from a header the proxy sets, checked against a secret only
+  the proxy knows. Without that check, a caller could forge a fresh IP
+  on every request and dodge the limit. The proxy itself used to trust
+  the wrong end of that header; it now trusts the end a caller can't
+  forge.
+- **A hard cap limits how many demo tenants can exist at once**, on top
+  of the per-IP limit, since each one copies the sample corpus and an
+  unbounded number of visitors means unbounded storage growth.
+- **`POST /auth/keys` is now rate-limited and length-bounded** too. It
+  has no key to check yet, same as the demo endpoint, so nothing else
+  stopped a script from minting unlimited tenants for free.
+- **`POST /eval/runs` is closed to demo tenants.** It ingests the
+  golden corpus and calls the model for real, and demo tenants are
+  free to create, so leaving it open would let anyone burn through the
+  quota.
+- **A generation failure returns a clean 503** and is still logged,
+  instead of an unhandled error that left no trace. The streaming
+  endpoint got the same fix: a failure partway through now sends an
+  explicit error event instead of just cutting off.
+- **Ephemeral tenants are swept on every boot**, on top of the sweep
+  that already runs on new demo traffic, since Render has no cron job
+  and an idle instance would otherwise never clean up.
+- **The reranker used to be a PyTorch model** that cost about 555MB of
+  memory to load, over Render's free tier limit. Swapped for
+  `flashrank`, an ONNX version of the same kind of model, which costs
+  about 120MB.
 
 ## Tech stack
 
@@ -330,33 +309,30 @@ pytest -m "not live_api"
 ```
 
 79 tests, run against a real Postgres instance with the schema built by
-the actual `alembic upgrade head` chain (not a shortcut that only checks
-today's model definitions), covering multi-tenant isolation, the full
-retrieval funnel, ingestion, caching, rate-limiting, the refusal path,
-the ephemeral demo tenant lifecycle, and the abuse-surface fixes above.
-One test is marked `live_api` and hits the real Gemini embedding
-endpoint as a smoke test; it is excluded from CI since it costs real
-quota and is not deterministic.
+the actual `alembic upgrade head` chain, not a shortcut that only checks
+today's model definitions. They cover multi-tenant isolation, the full
+retrieval funnel, ingestion, caching, rate limiting, the refusal path,
+and the ephemeral demo tenant lifecycle. One test is marked `live_api`
+and hits the real Gemini embedding endpoint as a smoke test; it's
+excluded from CI since it costs real quota and isn't deterministic.
 
 ## Known limitations at real scale
 
-- The exact-match query cache and the rate limiters are per-process,
-  in-memory state. Correct for one instance, wrong the moment there is
-  more than one; a real deployment needs Redis or similar.
-- BM25 rebuilds its index from scratch on every query, since `rank-bm25`
-  has no persistent index. Fine at demo scale; at real scale this would
-  move into Postgres itself with a `tsvector` column and a GIN index.
-- The reranker's ONNX model downloads to `/tmp` on first use rather than
-  being baked into the Docker image. Fine for a free-tier deployment where
-  image size and cold-start memory both matter.
-- There is no per-document filter on queries; every query searches a
-  tenant's entire ready corpus. A deliberate scope decision, not an
-  oversight.
-- The HNSW index on `chunks.embedding` is global, not partitioned per
-  tenant, and dense retrieval filters by `tenant_id` after the ANN walk
-  finds candidates, not before. At real scale, with many tenants sharing
-  one table, this is the classic filtered-ANN recall problem: a tenant
-  with few chunks in a table dominated by other tenants' chunks can get
-  degraded recall on its own dense leg. Invisible at demo scale (one
-  small table); the fix at scale is per-tenant partial indexes or
-  pgvector's iterative index scans.
+- The query cache and rate limiters live in one process's memory. Fine
+  for one instance, wrong the moment there's more than one. A real
+  deployment needs Redis or something like it.
+- BM25 rebuilds its index from scratch on every query, since the
+  library has no persistent index. Fine at this scale; at real scale
+  this would move into Postgres itself with a `tsvector` column and a
+  GIN index.
+- The reranker's model downloads on first use instead of shipping
+  inside the Docker image, to keep the image small and cold starts
+  light.
+- There's no per-document filter on queries. Every query searches a
+  tenant's whole corpus. That's a deliberate choice, not an oversight.
+- The vector index is shared across all tenants instead of split per
+  tenant, and the tenant filter is applied after the index search
+  finds candidates, not before. At real scale, with many tenants in
+  one table, a tenant with few chunks can get worse search results
+  than one with many chunks. Invisible at this scale; the fix is
+  per-tenant indexes.
