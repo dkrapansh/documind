@@ -4,9 +4,9 @@ import { useCountUp } from "../hooks/useCountUp";
 import "./Footer.css";
 
 const STATS = [
-  { value: 1.0, label: "Faithfulness" },
-  { value: 0.83, label: "Answer relevancy" },
-  { value: 0.79, label: "Context precision" },
+  { value: 0.99, label: "Faithfulness" },
+  { value: 0.78, label: "Answer relevancy" },
+  { value: 0.73, label: "Context precision" },
 ];
 
 function EvalStat({ value, label }) {

@@ -94,7 +94,7 @@ export function Funnel() {
         <div className="band">
           <div className="band-in">
             <BandStat value={555} end2={120} cap="The reranker was rewritten from PyTorch to ONNX after it OOM'd on a 512MB host: same model class, one-fifth the memory." />
-            <BandStatSimple value={6} of={6} cap="Every genuinely-unanswerable question in the golden set is correctly refused, up from 3/6 before the threshold was tuned on real data." />
+            <BandStatSimple value={6} of={8} cap="6 of 8 unanswerable questions are refused before the model ever runs. The other 2 still get a correct, honest answer instead of a guess." />
           </div>
         </div>
       </div>
