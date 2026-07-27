@@ -192,12 +192,12 @@ A hand-built golden dataset against a fictional ten-document corpus.
 and answering functions, not a reimplementation, and scores the results
 with RAGAS.
 
-| Metric | Score (v2 dataset, 30 items) |
-|---|---|
-| Faithfulness | 1.0 |
-| Answer relevancy | 0.83 |
-| Context precision | 0.79 |
-| Refusal accuracy | 6/6 (100%) |
+| Metric | v2 (30 items) | v3 (41 items) |
+|---|---|---|
+| Faithfulness | 1.0 | 0.99 |
+| Answer relevancy | 0.83 | 0.78 |
+| Context precision | 0.79 | 0.73 |
+| Refusal accuracy | 6/6 (100%) | 6/8 (75%) |
 
 The confidence threshold was tuned against measured data, not picked by
 hand: an earlier guess correctly refused 3 of 6 genuinely unanswerable
@@ -205,17 +205,29 @@ questions, and retuning brought that to 6 of 6 with zero change to answer
 quality on the 24 answerable questions. Full history is in
 [`eval/RESULTS.md`](eval/RESULTS.md).
 
-That 1.0 faithfulness score is real but easy to over-read. Every v2 answer
-is close to a verbatim echo of one source sentence, and every refusal item
-is on a topic with no lexical overlap to the corpus at all, so neither
-number is tested anywhere near its real boundary. The dataset is now v3
-(41 items): it adds questions that need arithmetic the corpus never states,
+v2's 1.0 faithfulness score was real but easy to over-read: every v2
+answer was close to a verbatim echo of one source sentence, and every
+refusal item was on a topic with no lexical overlap to the corpus at
+all, so neither number was tested anywhere near its real boundary.
+v3 (41 items) adds arithmetic questions the corpus never states outright,
 questions that share vocabulary with a real sentence but ask about the
-excluded case, questions that require comparing two documents against each
-other, multi-hop questions that need elimination across chunks, and
-near-miss refusals that are topically adjacent to real content instead of
-unrelated to it. No run has scored v3 yet since that costs real,
-rate-limited Gemini quota.
+excluded case, cross-document comparisons, multi-hop elimination
+questions, and two near-miss refusals that are topically adjacent to
+real content instead of unrelated to it.
+
+v3's refusal accuracy dropping to 6/8 is exactly what those near-miss
+items were built to expose: both misses are the two new near-miss
+questions, whose heavy lexical overlap with a real chunk clears the 0.7
+confidence gate before the LLM ever runs. In both cases the model's
+actual answer was still correct and non-hallucinatory (it said the
+specific fact wasn't in the documents), just in different words than the
+exact refusal string this metric checks against - so the system never
+gave a wrong answer, the deterministic pre-LLM gate just didn't fire
+where it ideally should have. Faithfulness barely moved even under
+arithmetic and multi-hop reasoning. Full per-category breakdown,
+including why context_precision dropped and what that pattern looked
+like back in v2, is in
+[`eval/RESULTS.md`](eval/RESULTS.md).
 
 ## Security and reliability decisions
 

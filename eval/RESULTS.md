@@ -1,3 +1,81 @@
+# Eval run: v3 dataset (2026-07-27, eval run 9)
+
+The 41-item v3 dataset (see the dataset-hardening section below) run once against the real
+pipeline via `eval/run_eval.py`, same models and `confidence_threshold` (0.7) as v2's tuned
+run 8, so the two rows below are a direct comparison.
+
+| | v2 (24 answerable, 6 refusal - run 8) | v3 (33 answerable, 8 refusal - run 9) |
+|---|---|---|
+| Faithfulness | 1.0 | 0.995 |
+| Answer relevancy | 0.832 | 0.784 |
+| Context precision | 0.792 | 0.727 |
+| Refusal accuracy | 6/6 (100%) | 6/8 (75%) |
+
+## Headline sentence
+
+**The harder v3 items did exactly what they were built to do: refusal accuracy dropped from
+100% to 75%, and both misses are the two deliberately near-miss items (gd-038, gd-039) - but in
+both cases the model's actual generated answer was still correct and non-hallucinatory ("the
+documents don't specify that"), it just doesn't literally match the `REFUSAL_ANSWER` string this
+metric checks against. The failure is in the confidence gate's determinism on near-miss lexical
+overlap, not in the system's user-facing correctness.**
+
+## What actually happened on the two refusal misses
+
+Reproduced directly against the eval-harness tenant (`retrieve_ranked` + `answer_question`,
+the same deterministic dense/BM25/RRF/rerank funnel plus `temperature=0` generation the real
+run used, so this matches run 9's own behavior):
+
+- **gd-038** ("data breach *suspected but not confirmed*"): best-reranked confidence 0.999 -
+  the near-miss overlap with the real "confirmed data breach, 72 hours" chunk reads as clearly
+  relevant, so the 0.7 gate never fires. The LLM then correctly answers that the documents only
+  cover the **confirmed**-breach case, not the suspected one.
+- **gd-039** (referral credit reversed on a later refund): best-reranked confidence 0.875, same
+  shape. The LLM answers that the context says nothing about credit reversal on a refund.
+
+Both are the exact failure mode predicted when these items were designed: near-miss lexical
+overlap beats the retrieval-confidence gate. What's new here is that the system prompt's "say so
+explicitly instead of guessing" instruction caught both cases anyway at generation time - the
+system never gave a wrong or fabricated answer, it just paid for an unnecessary LLM call, and the
+harness's exact-string refusal check can't distinguish that from a real failure. All six original,
+topically-unrelated refusal items still refuse cleanly, unchanged from v2.
+
+## Faithfulness and context_precision under the harder categories
+
+Faithfulness barely moved (1.0 -> 0.995): only one item, `multi_hop` gd-040, scored below 1.0
+(0.833), and every other new category - `numeric_derived`, `negation_distractor`,
+`cross_doc_conflict`, and the other `multi_hop` item - scored a clean 1.0. The model rarely bolts
+on unsupported claims even under arithmetic and cross-document reasoning, a real result rather
+than the near-tautological one v2's near-verbatim ground truths produced.
+
+`context_precision` (0.792 -> 0.727) looks worse, but pulling run 8's own per-item scores shows
+the identical pattern already existed in v2: `single_chunk_lookup` items score ~1.0 across the
+board, but several `multi_chunk_synthesis` items (gd-010, gd-024 through gd-027) already scored
+exactly 0.0. v3's new multi-document categories (`cross_doc_conflict`, `multi_hop`) land in that
+same 0.0 bucket, so v3 mostly added more items to a pre-existing pattern rather than surfacing a
+new one. Most likely mechanism, not confirmed against RAGAS's source: `context_precision` judges
+each retrieved chunk's standalone relevance and weights by rank, so a genuinely-needed supporting
+chunk ranked below an unrelated one within the top 4 tanks the score even though generation still
+sees and correctly uses every chunk regardless of rank - consistent with faithfulness staying at
+1.0 on the very same items. Worth a closer look before trusting this metric's absolute number.
+
+`answer_relevancy` (0.832 -> 0.784) dropped moderately, dragged down by two exact-0.0 scores
+(gd-037 `cross_doc_conflict`, gd-041 `multi_hop`) alongside otherwise-normal 0.7-0.9 scores
+elsewhere - plausibly `AnswerRelevancy(strictness=1)`'s known self-consistency tradeoff (see the
+Day 26/27 entry below) landing badly on two comparative answers, not independently confirmed.
+
+## Caveats
+
+- One run, not repeated - Gemini free-tier quota and the ~13-minute RAGAS scoring pass (heavy
+  429 backoff throughout) make repeating this expensive. The directional findings (near-miss
+  refusal-gate failure, faithfulness holding under harder categories) are trustworthy; exact
+  percentages on an 8-item refusal set are not.
+- The refusal-miss reproduction above re-ran gd-038/039 outside the original eval run, since the
+  eval harness calls retrieval/answering directly and doesn't write to `query_logs` (only the
+  real `POST /query` path does). Retrieval is deterministic and generation runs at
+  `temperature=0`, so this is expected to match run 9 exactly, but it's technically a separate
+  execution, not a read of run 9's own stored output.
+
 # Golden dataset hardened to v2 -> v3 (2026-07-26)
 
 Runs 6-8 below all score faithfulness at a flat 1.0 on the 24 `single_chunk_lookup` /
@@ -40,13 +118,9 @@ changes needed beyond content-hash dedup already handling it):
   corpus. These are a harder test of the refusal gate than the original six's
   completely-unrelated topics.
 
-No eval run has been executed against v3 yet - this section documents the dataset
-change itself. Running `python -m eval.run_eval` (or `POST /eval/runs`) against v3 costs
-real, rate-limited Gemini quota (~41 items x `_ITEM_PACING_SECONDS`, plus RAGAS scoring
-calls), so the resulting faithfulness/relevancy/precision numbers should come from an
-actual run, not be estimated here. Expect faithfulness and context_precision to drop
-below the v2 numbers on the new items specifically - a `numeric_derived` or
-`negation_distractor` question failing is exactly the failure mode v2 couldn't surface.
+This section documented the dataset change itself, ahead of spending the real, rate-limited
+Gemini quota a v3 run costs. That run has since happened - see "Eval run: v3 dataset
+(2026-07-27, eval run 9)" above for the actual faithfulness/relevancy/precision/refusal numbers.
 
 # Eval harness results: confidence_threshold tuning (Day 26/27)
 
