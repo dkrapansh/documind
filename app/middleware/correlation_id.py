@@ -7,7 +7,7 @@ from starlette.requests import Request
 correlation_id_var: ContextVar[str] = ContextVar("correlation_id", default="")
 
 class CorrelationIdMiddleware(BaseHTTPMiddleware):
-    async def dispatch(selc, request: Request, call_next):
+    async def dispatch(self, request: Request, call_next):
         correlation_id = str(uuid.uuid4())
 
         correlation_id_var.set(correlation_id)

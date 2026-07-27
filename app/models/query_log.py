@@ -12,9 +12,9 @@ class QueryLog(Base):
     question: Mapped[str] = mapped_column(String)
     retrieved_chunk_ids: Mapped[list] = mapped_column(JSON, default=list)
     answer: Mapped[str | None] = mapped_column(String, nullable=True)
-    confidence: Mapped[float] = mapped_column(Float, nullable=True)
-    latency_ms: Mapped[int] = mapped_column(Integer, nullable=True)
-    correlation_id: Mapped[str] = mapped_column(String(50), nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    correlation_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

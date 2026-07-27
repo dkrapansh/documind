@@ -9,7 +9,6 @@ from app.repositories.api_keys import get_by_hashed_key
 
 EXCLUDED_PATHS = {
     "/health",
-    "/readyz",
     "/docs",
     "/openapi.json",
     "/redoc",

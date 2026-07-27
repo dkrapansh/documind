@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import String, DateTime, Boolean, Integer, ForeignKey
+from sqlalchemy import String, DateTime, Boolean, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 
@@ -13,4 +13,3 @@ class ApiKey(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)
-    request_count: Mapped[int] = mapped_column(Integer, default=0)

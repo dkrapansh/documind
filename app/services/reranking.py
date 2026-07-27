@@ -39,6 +39,12 @@ def retrieve_ranked(
 
     ranked = rerank_chunks(question, candidates)
     top_ranked = ranked[:FINAL_TOP_K]
+    if not top_ranked:
+        # Defensive: candidates was non-empty, but if the reranker ever
+        # comes back empty anyway (e.g. an unexpected flashrank result),
+        # treat it the same as "no candidates" rather than crashing on
+        # an unguarded index into an empty list.
+        return []
 
     best_chunk, best_score = top_ranked[0]
     if best_score < confidence_threshold:
