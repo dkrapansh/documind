@@ -13,7 +13,7 @@ export default async function handler(req, res) {
   try {
     session = await getSessionKey(req);
   } catch (err) {
-    res.status(502).json({ detail: err.message });
+    res.status(err.status ?? 502).json({ detail: err.message });
     return;
   }
 

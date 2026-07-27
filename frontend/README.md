@@ -48,7 +48,15 @@ immediately without waiting on ingestion. See `app/services/demo_seed.py` in the
 
 Ephemeral tenants are swept once older than `settings.ephemeral_tenant_ttl_minutes` (default 60).
 The sweep runs lazily inside `POST /auth/demo-session` itself (no cron needed); see
-`app/services/tenant_cleanup.py`.
+`app/services/tenant_cleanup.py`. A separate hard cap
+(`settings.max_live_ephemeral_tenants`) limits how many tenants can be alive at once, since
+each one clones the seed corpus and the per-IP limit alone doesn't bound total visitors.
+
+The per-IP rate limit on `POST /auth/demo-session` used to trust the first IP in
+`X-Forwarded-For`, which the caller controls. It now trusts the last one, the one Vercel's own
+edge appended and can't be forged. If minting fails (rate limited, or the demo is at capacity),
+this proxy now passes the backend's real status and message through instead of a flat 502, so
+the visitor sees why, not just "couldn't reach the demo".
 
 ## Local run
 

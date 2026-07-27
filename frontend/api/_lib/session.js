@@ -51,7 +51,13 @@ export async function getSessionKey(req) {
 
   const res = await fetch(`${BACKEND}/auth/demo-session`, { method: "POST", headers });
   if (!res.ok) {
-    throw new Error(`Failed to mint demo session (${res.status})`);
+    // Carries the backend's real status and message (rate limited,
+    // demo at capacity, etc.) instead of a flat 502, so the browser can
+    // show the visitor something true instead of "couldn't reach the demo".
+    const body = await res.json().catch(() => ({}));
+    const error = new Error(body.detail || `Failed to mint demo session (${res.status})`);
+    error.status = res.status;
+    throw error;
   }
   const body = await res.json();
   return { key: body.api_key, isNew: true };
