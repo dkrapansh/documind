@@ -107,7 +107,7 @@ documind/
 │   ├── golden_dataset.json          # 41 question/answer/category items (v3)
 │   ├── run_eval.py                  # CLI entry point for an offline eval run
 │   └── RESULTS.md                   # eval history and threshold-tuning notes
-├── tests/                             # 19 files, 73 tests, real Postgres
+├── tests/                             # 18 files, 79 tests, real Postgres
 ├── frontend/                           # React + Vite landing page and demo
 │   ├── src/                             # components, scroll animation, api client
 │   └── api/                             # Vercel proxy: session cookie, no client-side key
@@ -232,13 +232,29 @@ rate-limited Gemini quota.
   the proxy used to look like it came from the proxy's own shared egress
   IP. The backend now only trusts a forwarded visitor IP when it is paired
   with a shared secret known only to the proxy, so a direct caller cannot
-  forge a fresh IP, and real visitors no longer collide on one bucket.
+  forge a fresh IP, and real visitors no longer collide on one bucket. The
+  proxy itself also used to read the client-spoofable *first* hop of
+  `X-Forwarded-For`; it now reads the *last* hop, the one Vercel's own
+  edge appended and the only one a caller can't forge.
+- **A hard cap (`max_live_ephemeral_tenants`) limits concurrently live
+  demo tenants**, independent of the per-IP mint rate limit above. Each
+  mint clones the seed corpus by value, so unbounded distinct visitors
+  within one TTL window is unbounded storage growth even if no single IP
+  is over its own limit.
+- **`POST /auth/keys` is rate-limited and length-bounded per IP**, the
+  same tradeoff as the demo-session endpoint: it has to stay
+  unauthenticated (there's no key yet to check), so nothing else stopped
+  a script from minting unlimited tenants and keys for free.
 - **`POST /eval/runs` is closed to ephemeral demo tenants.** It ingests
   the golden corpus and fires real Gemini calls, and demo tenants are free
   to mint, so leaving it open would let anyone script quota exhaustion.
 - **A generation failure now returns a clean 503** and is still logged to
   `query_logs`, instead of an unhandled 500 that left no trace and never
-  hit the cache with a poisoned answer.
+  hit the cache with a poisoned answer. `GET /query/stream` has the same
+  gap closed a different way: a failure mid-stream now ends the SSE
+  connection with an explicit `error` event instead of just stopping, and
+  the partial answer is logged as the failure, not cached as if it were
+  a real one.
 - **Ephemeral tenants are swept on every app boot**, in addition to the
   existing sweep on new demo traffic, since Render has no cron and an idle
   instance would otherwise leave abandoned tenants around indefinitely.
@@ -301,12 +317,14 @@ You'll need a `.env` with `DATABASE_URL` and `GEMINI_API_KEY` set. See
 pytest -m "not live_api"
 ```
 
-73 tests, run against a real Postgres instance, covering multi-tenant
-isolation, the full retrieval funnel, ingestion, caching, rate-limiting,
-the refusal path, the ephemeral demo tenant lifecycle, and the abuse-surface
-fixes above. One test is marked `live_api` and hits the real Gemini
-embedding endpoint as a smoke test; it is excluded from CI since it costs
-real quota and is not deterministic.
+79 tests, run against a real Postgres instance with the schema built by
+the actual `alembic upgrade head` chain (not a shortcut that only checks
+today's model definitions), covering multi-tenant isolation, the full
+retrieval funnel, ingestion, caching, rate-limiting, the refusal path,
+the ephemeral demo tenant lifecycle, and the abuse-surface fixes above.
+One test is marked `live_api` and hits the real Gemini embedding
+endpoint as a smoke test; it is excluded from CI since it costs real
+quota and is not deterministic.
 
 ## Known limitations at real scale
 
@@ -322,3 +340,11 @@ real quota and is not deterministic.
 - There is no per-document filter on queries; every query searches a
   tenant's entire ready corpus. A deliberate scope decision, not an
   oversight.
+- The HNSW index on `chunks.embedding` is global, not partitioned per
+  tenant, and dense retrieval filters by `tenant_id` after the ANN walk
+  finds candidates, not before. At real scale, with many tenants sharing
+  one table, this is the classic filtered-ANN recall problem: a tenant
+  with few chunks in a table dominated by other tenants' chunks can get
+  degraded recall on its own dense leg. Invisible at demo scale (one
+  small table); the fix at scale is per-tenant partial indexes or
+  pgvector's iterative index scans.
