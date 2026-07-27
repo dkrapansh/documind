@@ -30,14 +30,9 @@ def _alembic_config() -> Config:
 
 @pytest.fixture(scope="session")
 def test_engine():
-    """Builds the schema by running the real `alembic upgrade head`, the
-    same chain Dockerfile's CMD runs on every deploy - not
-    Base.metadata.create_all, which only proves the current model
-    definitions are internally consistent and would pass even if a
-    migration were broken or missing (e.g. the pgvector Vector import
-    gotcha CLAUDE.md warns about). A green test suite should mean the
-    migration chain actually works, not just that today's models do.
-    """
+    """Builds the schema via the real `alembic upgrade head`, the same
+    chain Dockerfile's CMD runs on deploy - not Base.metadata.create_all,
+    which would pass even if a migration were broken or missing."""
     command.upgrade(_alembic_config(), "head")
     engine = create_engine(settings.database_url)
     yield engine

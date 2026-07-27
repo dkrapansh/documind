@@ -15,11 +15,7 @@ from app.services.demo_session import mint_demo_session
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-# Neither in-memory limiter dict below ever evicts a key once seen, only
-# resets its window - unbounded in principle over a long-running
-# process's lifetime. A full clear once implausibly large is a blunt
-# tool but simpler and safer than partial-eviction bookkeeping for a cap
-# this unlikely to be hit at demo scale.
+# Same unbounded-growth guard as middleware/rate_limit.py's _MAX_TRACKED_KEYS.
 _MAX_TRACKED_KEYS = 50_000
 
 # In-memory, single-instance limiter, same tradeoff and pattern as the

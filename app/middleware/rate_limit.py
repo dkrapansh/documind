@@ -9,11 +9,9 @@ from app.config import settings
 from app.core.exceptions import RateLimitExceededException
 
 _request_counts: dict[int, tuple[float, int]] = defaultdict(lambda: (0.0, 0))
-# This dict never evicts an api_key_id once seen, only resets its window -
-# unbounded in principle over a long-running process's lifetime. A full
-# clear once it gets implausibly large is a blunt tool (a few callers get
-# an early fresh window) but simpler and safer than partial-eviction
-# bookkeeping for a cap this unlikely to be hit at demo scale.
+# Never evicts a key, only resets its window - a full clear once this
+# gets implausibly large is a blunt but simple bound on otherwise
+# unbounded growth over a long-running process's lifetime.
 _MAX_TRACKED_KEYS = 50_000
 
 class RateLimitMiddleware(BaseHTTPMiddleware):

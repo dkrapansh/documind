@@ -21,10 +21,6 @@ def mint_demo_session(db: Session) -> tuple[Tenant, str]:
     sweep_expired_ephemeral_tenants(db)
 
     if count_ephemeral(db) >= settings.max_live_ephemeral_tenants:
-        # The per-IP rate limit bounds one visitor's mint rate, not the
-        # total number of distinct visitors alive within one TTL window -
-        # each mint clones the seed corpus by value, so this is the
-        # backstop against unbounded concurrent storage growth.
         raise DemoCapacityExceededException()
 
     tenant_name = f"demo-session-{uuid.uuid4().hex[:12]}"

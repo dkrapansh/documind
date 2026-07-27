@@ -54,21 +54,13 @@ def _log_streamed_query(
     failure: dict,
 ) -> None:
     """Runs as a StreamingResponse `background` task, after the SSE body
-    finishes sending, so accumulated_answer and failure are fully
-    populated and latency can be measured end-to-end. Opens its own
-    session, same as ingestion.py's process_document: the request's own
-    session is torn down once streaming starts, well before this runs.
+    finishes sending, same as ingestion.py's process_document: the
+    request's own session is torn down once streaming starts.
 
-    failure is a dict, not a bool, because BackgroundTask binds its
-    kwargs at construction time, before the generator has run - a plain
-    bool captured then would always read False. Passing the same mutable
-    dict the generator writes to (see event_stream's except clause) lets
-    this read its final state instead.
-
-    Skips caching on a cache replay (already cached, re-caching is a
-    no-op at best) and on a generation failure (a transient failure
-    shouldn't poison repeat questions) - mirrors query_service.answer_query's
-    non-streaming cache-aside behavior.
+    failure is a dict, not a bool, since BackgroundTask binds kwargs at
+    construction time, before the generator runs - a plain bool would
+    always read False. Skips caching on a cache replay or a generation
+    failure, mirroring answer_query's non-streaming cache-aside rules.
     """
     full_answer = "".join(accumulated_answer)
     if not cached_hit and not failure["happened"]:

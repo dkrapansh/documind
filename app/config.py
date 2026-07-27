@@ -10,10 +10,9 @@ class Settings(BaseSettings):
     rate_limit_window_seconds: int = 60
 
     # POST /auth/keys is unauthenticated by necessity (nothing exists yet
-    # to authenticate with), same as /auth/demo-session, so it needs its
-    # own per-IP cap independent of RateLimitMiddleware (which only
-    # limits requests that already resolved an api_key_id). Otherwise a
-    # script can mint unlimited tenants+keys for free.
+    # to authenticate with), so it needs its own per-IP cap independent
+    # of RateLimitMiddleware, which only limits requests that already
+    # resolved an api_key_id.
     auth_keys_rate_limit: int = 20
     auth_keys_rate_limit_window_seconds: int = 3600
 
@@ -77,13 +76,10 @@ class Settings(BaseSettings):
     # re-embedding) into every new ephemeral demo tenant - see
     # services/demo_seed.py.
     seed_tenant_name: str = "demo"
-    # Hard ceiling on concurrently live (within-TTL) ephemeral tenants.
-    # The per-IP demo_session_rate_limit bounds one visitor's mint rate,
-    # but not the total number of distinct visitors inside one TTL
-    # window - each mint clones the seed corpus by value, so unbounded
-    # concurrent tenants is unbounded storage growth. Checked after the
-    # lazy sweep, so this counts tenants genuinely still alive, not ones
-    # merely awaiting cleanup.
+    # Hard ceiling on concurrently live ephemeral tenants - bounds
+    # storage growth from cloning the seed corpus, independent of the
+    # per-IP demo_session_rate_limit above which only caps one visitor's
+    # mint rate, not the total number of distinct visitors at once.
     max_live_ephemeral_tenants: int = 200
 
     # Shared secret with frontend/api/ (Vercel), same value as its
