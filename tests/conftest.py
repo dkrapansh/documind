@@ -7,6 +7,8 @@ env_test_path = Path(__file__).resolve().parent.parent / ".env.test"
 load_dotenv(env_test_path, override=True)
 
 import pytest
+from alembic import command
+from alembic.config import Config
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 
@@ -19,13 +21,28 @@ import app.api.routers.auth as auth_router_module
 
 from sqlalchemy.orm import sessionmaker
 
+_ALEMBIC_INI = Path(__file__).resolve().parent.parent / "alembic.ini"
+
+def _alembic_config() -> Config:
+    config = Config(str(_ALEMBIC_INI))
+    config.set_main_option("sqlalchemy.url", settings.database_url)
+    return config
+
 @pytest.fixture(scope="session")
 def test_engine():
+    """Builds the schema by running the real `alembic upgrade head`, the
+    same chain Dockerfile's CMD runs on every deploy - not
+    Base.metadata.create_all, which only proves the current model
+    definitions are internally consistent and would pass even if a
+    migration were broken or missing (e.g. the pgvector Vector import
+    gotcha CLAUDE.md warns about). A green test suite should mean the
+    migration chain actually works, not just that today's models do.
+    """
+    command.upgrade(_alembic_config(), "head")
     engine = create_engine(settings.database_url)
-    Base.metadata.create_all(engine)
     yield engine
-    Base.metadata.drop_all(engine)
     engine.dispose()
+    command.downgrade(_alembic_config(), "base")
 
 @pytest.fixture(autouse=True)
 def clean_slate(test_engine):
@@ -38,6 +55,7 @@ def clean_slate(test_engine):
 
     rate_limit_module._request_counts.clear()
     auth_router_module._demo_session_counts.clear()
+    auth_router_module._create_key_counts.clear()
     yield
 
 @pytest.fixture
