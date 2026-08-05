@@ -23,7 +23,12 @@ h1 .word {
   display: inline-block;
   overflow: hidden;
   vertical-align: top;
-  padding-bottom: 0.02em;
+  /* line-height: 0.98 on h1 squeezes each word's line box shorter than
+     the font's real descender depth, so overflow: hidden (needed to
+     mask the per-character reveal animation) was clipping the bottom
+     of g/y/p/q. This just gives the clip box enough extra room below
+     to include a full descender. */
+  padding-bottom: 0.22em;
 }
 
 h1 .char {
