@@ -11,3 +11,6 @@ class CreateKeyRequest(BaseModel):
 class CreateKeyResponse(BaseModel):
     api_key: str
     tenant_id: int
+
+class GoogleLoginRequest(BaseModel):
+    id_token: str = Field(min_length=1)

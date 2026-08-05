@@ -88,4 +88,12 @@ class Settings(BaseSettings):
     # since a direct caller could set that header to anything. None
     # (local dev default) means it's never trusted.
     demo_proxy_shared_secret: str | None = None
+
+    # OAuth Client ID from Google Cloud Console. Required as the `aud`
+    # check in verify_google_id_token - without pinning to this, any
+    # valid Google ID token (issued for someone else's app) would pass
+    # signature verification too. None (unconfigured) means POST
+    # /auth/google refuses every login instead of silently accepting
+    # tokens meant for a different app.
+    google_oauth_client_id: str | None = None
 settings = Settings()

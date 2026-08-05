@@ -22,3 +22,12 @@ def revoke(db: Session, api_key_id: int) -> None:
 
 def delete_by_tenant(db: Session, tenant_id: int) -> None:
     db.query(ApiKey).filter(ApiKey.tenant_id == tenant_id).delete()
+
+def revoke_all_by_tenant(db: Session, tenant_id: int) -> None:
+    """Used by POST /auth/google before minting a fresh key: a raw key
+    can never be re-issued once hashed, so every login mints a new one
+    regardless - this just makes sure the previous one stops being
+    valid instead of piling up forever."""
+    db.query(ApiKey).filter(
+        ApiKey.tenant_id == tenant_id, ApiKey.revoked.is_(False)
+    ).update({"revoked": True})

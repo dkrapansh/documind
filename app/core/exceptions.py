@@ -45,6 +45,10 @@ class DemoCapacityExceededException(AppException):
     status_code = 503
     detail = "The public demo is at capacity right now. Please try again in a few minutes."
 
+class InvalidGoogleTokenException(AppException):
+    status_code = 401
+    detail = "Invalid or expired Google login"
+
 class PayloadTooLargeException(AppException):
     status_code = 413
 

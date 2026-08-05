@@ -14,6 +14,7 @@ EXCLUDED_PATHS = {
     "/redoc",
     "/auth/keys",
     "/auth/demo-session",
+    "/auth/google",
 }
 
 class AuthMiddleware(BaseHTTPMiddleware):

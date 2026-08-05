@@ -8,9 +8,10 @@ from app.api.deps import get_db
 from app.api.security_scheme import api_key_header
 from app.config import settings
 from app.core.exceptions import RateLimitExceededException
-from app.repositories.api_keys import create_api_key, revoke
-from app.repositories.tenants import create_tenant
-from app.schemas.auth import CreateKeyRequest, CreateKeyResponse
+from app.core.google_auth import verify_google_id_token
+from app.repositories.api_keys import create_api_key, revoke, revoke_all_by_tenant
+from app.repositories.tenants import create_tenant, get_by_name
+from app.schemas.auth import CreateKeyRequest, CreateKeyResponse, GoogleLoginRequest
 from app.services.demo_session import mint_demo_session
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -41,6 +42,30 @@ def issue_key(payload: CreateKeyRequest, request: Request, db: Session = Depends
 
     tenant = create_tenant(db, name=payload.tenant_name)
     _, raw_key = create_api_key(db, tenant_id = tenant.id)
+    return CreateKeyResponse(api_key=raw_key, tenant_id=tenant.id)
+
+@router.post("/google", response_model=CreateKeyResponse)
+def google_login(payload: GoogleLoginRequest, db: Session = Depends(get_db)):
+    """Verifies a Google Identity Services ID token from the frontend's
+    Sign in with Google button, then mints an API key exactly like
+    POST /auth/keys - everything downstream (middleware, routers) only
+    ever sees a normal X-API-Key, with no idea a Google login happened.
+
+    Get-or-create by email is safe here in a way it isn't on
+    POST /auth/keys: the email comes from a Google-verified token, not
+    raw unauthenticated input, so an attacker can't claim it without
+    controlling that real Google account. A repeat login by the same
+    account reuses the same tenant instead of minting a new one.
+    """
+    claims = verify_google_id_token(payload.id_token)
+    email = claims["email"]
+
+    tenant = get_by_name(db, email)
+    if tenant is None:
+        tenant = create_tenant(db, name=email)
+
+    revoke_all_by_tenant(db, tenant.id)
+    _, raw_key = create_api_key(db, tenant_id=tenant.id)
     return CreateKeyResponse(api_key=raw_key, tenant_id=tenant.id)
 
 @router.post("/keys/revoke", status_code=204, dependencies=[Depends(api_key_header)])
