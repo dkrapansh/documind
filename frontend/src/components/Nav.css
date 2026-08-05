@@ -49,23 +49,22 @@ nav {
 }
 
 .theme-toggle {
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 12px;
-  letter-spacing: 0.04em;
-  color: var(--ink);
+  font-family: "Schibsted Grotesk", sans-serif;
+  font-weight: 400;
+  font-size: 13px;
+  color: var(--gray);
   background: transparent;
-  border: 1px solid var(--hair);
-  padding: 7px 11px;
+  border: none;
+  padding: 0;
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 8px;
-  transition: border-color .2s, color .2s;
+  transition: color 0.2s ease;
 }
 
 .theme-toggle:hover {
-  border-color: var(--spruce);
-  color: var(--spruce);
+  color: var(--ink);
 }
 
 /* Google's own rendered button (its chrome, font, corners, can't be
@@ -83,4 +82,13 @@ nav {
   border-radius: 50%;
   border: 1.5px solid currentColor;
   background: linear-gradient(90deg, currentColor 0 50%, transparent 50% 100%);
+  flex-shrink: 0;
+}
+
+@media (max-width: 720px) {
+  /* Theme toggle shrinks to icon-only, Sign out has no icon of its
+     own, so it keeps its text label at every width. */
+  .theme-toggle > span:not(.ic) {
+    display: none;
+  }
 }

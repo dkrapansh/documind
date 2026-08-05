@@ -76,9 +76,11 @@ h1 .hl.draw::after {
 }
 
 .btn {
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 13px;
-  padding: 14px 22px;
+  font-family: "Schibsted Grotesk", sans-serif;
+  font-weight: 500;
+  font-size: 14px;
+  letter-spacing: 0.01em;
+  padding: 14px 28px;
   border: 1px solid var(--ink);
   background: var(--ink);
   color: var(--canvas);
@@ -86,6 +88,7 @@ h1 .hl.draw::after {
   transition: 0.25s;
   text-decoration: none;
   display: inline-block;
+  border-radius: 0;
 }
 
 .btn:hover {
