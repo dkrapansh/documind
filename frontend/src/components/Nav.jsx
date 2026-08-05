@@ -1,8 +1,54 @@
+import { useEffect, useRef } from "react";
 import { useTheme } from "../context/ThemeContext";
+import { useAuth } from "../context/AuthContext";
 import "./Nav.css";
+
+const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+
+function GoogleSignInButton() {
+  const { theme } = useTheme();
+  const { login } = useAuth();
+  const buttonRef = useRef(null);
+
+  useEffect(() => {
+    if (!CLIENT_ID) return;
+
+    let cancelled = false;
+    const tryInit = () => {
+      if (cancelled) return;
+      if (!window.google?.accounts?.id) {
+        setTimeout(tryInit, 100);
+        return;
+      }
+      window.google.accounts.id.initialize({
+        client_id: CLIENT_ID,
+        callback: (response) => {
+          login(response.credential).catch((err) => {
+            console.error("Google login failed:", err);
+          });
+        },
+      });
+      if (buttonRef.current) {
+        window.google.accounts.id.renderButton(buttonRef.current, {
+          theme: theme === "dark" ? "filled_black" : "outline",
+          size: "medium",
+          type: "standard",
+        });
+      }
+    };
+    tryInit();
+    return () => {
+      cancelled = true;
+    };
+  }, [theme, login]);
+
+  if (!CLIENT_ID) return null;
+  return <div className="gsi-slot" ref={buttonRef} />;
+}
 
 export function Nav() {
   const { theme, toggleTheme } = useTheme();
+  const { isLoggedIn, logout } = useAuth();
 
   const scrollToDemo = (e) => {
     e.preventDefault();
@@ -19,6 +65,13 @@ export function Nav() {
         <a className="navmeta mono nav-demo-link" href="#demo" onClick={scrollToDemo}>
           demo
         </a>
+        {isLoggedIn ? (
+          <button className="theme-toggle" onClick={logout}>
+            Sign out
+          </button>
+        ) : (
+          <GoogleSignInButton />
+        )}
         <button
           className="theme-toggle"
           onClick={toggleTheme}

@@ -2,6 +2,11 @@
 // backend URL lives here as a plain (non-VITE_) env var, so it's only
 // ever read server-side and never inlined into the client bundle.
 const COOKIE_NAME = "dm_session";
+// Set by api/auth-google.js on a real Google login - checked first so
+// a logged-in visitor's own tenant takes priority over the anonymous
+// demo one below, without documents.js/query-stream.js needing to
+// know the difference.
+const USER_COOKIE_NAME = "dm_user_session";
 const BACKEND = process.env.DOCUMIND_API_BASE;
 const SESSION_MAX_AGE_SECONDS = 3600;
 
@@ -34,12 +39,17 @@ function _visitorIp(req) {
 }
 
 /**
- * Returns the visitor's demo API key, minting a fresh ephemeral tenant
- * via POST /auth/demo-session on the backend if this browser doesn't
- * have one yet. The raw key never reaches the browser as JS-readable
- * state - only as the value of an httpOnly cookie set on the response.
+ * Returns the caller's API key: a real logged-in user's key if
+ * dm_user_session is set (see auth-google.js), otherwise the
+ * anonymous visitor's demo key, minting a fresh ephemeral tenant via
+ * POST /auth/demo-session if this browser doesn't have one yet either.
+ * The raw key never reaches the browser as JS-readable state - only
+ * as the value of an httpOnly cookie set on the response.
  */
 export async function getSessionKey(req) {
+  const userKey = parseCookie(req.headers.cookie, USER_COOKIE_NAME);
+  if (userKey) return { key: userKey, isNew: false };
+
   const existing = parseCookie(req.headers.cookie, COOKIE_NAME);
   if (existing) return { key: existing, isNew: false };
 

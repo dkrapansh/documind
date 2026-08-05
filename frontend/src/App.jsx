@@ -1,4 +1,5 @@
 import { ThemeProvider } from "./context/ThemeContext";
+import { AuthProvider } from "./context/AuthContext";
 import { Nav } from "./components/Nav";
 import { Hero } from "./components/Hero";
 import { Funnel } from "./components/Funnel";
@@ -9,12 +10,14 @@ import { Footer } from "./components/Footer";
 function App() {
   return (
     <ThemeProvider>
-      <Nav />
-      <Hero />
-      <Funnel />
-      <Refusal />
-      <Demo />
-      <Footer />
+      <AuthProvider>
+        <Nav />
+        <Hero />
+        <Funnel />
+        <Refusal />
+        <Demo />
+        <Footer />
+      </AuthProvider>
     </ThemeProvider>
   );
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useScrollReveal } from "../hooks/useScrollReveal";
+import { useAuth } from "../context/AuthContext";
 import {
   ApiError,
   listDocuments,
@@ -30,6 +31,7 @@ function extensionOf(filename) {
 export function Demo() {
   const sectionRef = useRef(null);
   useScrollReveal(sectionRef);
+  const { isLoggedIn } = useAuth();
 
   const [doc, setDoc] = useState(null); // { id, filename, status, chunk_count }
   const [docLoading, setDocLoading] = useState(true);
@@ -50,10 +52,14 @@ export function Demo() {
   const abortRef = useRef(null);
   const stepTimerRef = useRef(null);
 
-  // Load whatever the demo tenant already has ingested, so a first-time
-  // visitor can ask immediately without uploading anything themselves.
+  // Load whatever the current tenant already has ingested - the shared
+  // seeded demo corpus for an anonymous visitor, or a logged-in user's
+  // own (initially empty) documents. Re-runs on login/logout since
+  // that switches which tenant the session cookie points at.
   useEffect(() => {
     let cancelled = false;
+    setDocLoading(true);
+    setDoc(null);
     listDocuments({ onColdStart: () => !cancelled && setNotice(COLD_START_NOTICE) })
       .then((docs) => {
         if (cancelled) return;
@@ -70,7 +76,7 @@ export function Demo() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isLoggedIn]);
 
   const handleFiles = useCallback((files) => {
     const file = files?.[0];
@@ -190,7 +196,7 @@ export function Demo() {
         <div className="demo-wrap reveal">
           <div className="demo-top">
             <DocChip doc={doc} loading={docLoading} />
-            <div className="mono demo-tenant">tenant: demo</div>
+            <div className="mono demo-tenant">tenant: {isLoggedIn ? "you" : "demo"}</div>
           </div>
 
           <div

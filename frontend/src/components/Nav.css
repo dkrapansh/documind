@@ -68,6 +68,15 @@ nav {
   color: var(--spruce);
 }
 
+/* Google's own rendered button (its chrome, font, corners, can't be
+   restyled, their ToS requires the standard appearance) carries more
+   visual weight than the plain-text buttons around it, so it gets
+   extra room beyond .nav-right's base gap instead of sitting flush
+   against the theme toggle. */
+.gsi-slot {
+  margin: 0 6px;
+}
+
 .theme-toggle .ic {
   width: 12px;
   height: 12px;
