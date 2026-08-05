@@ -17,10 +17,18 @@ browser --(same-origin, cookie)--> /api/* (Vercel function) --(X-API-Key)--> Doc
 - `api/documents.js` proxies list / status / upload (`GET`, `GET ?id=`, `POST`).
 - `api/query-stream.js` proxies the SSE streaming endpoint, relaying the response body through
   unmodified so tokens still arrive as they're generated.
-- `api/_lib/session.js` is shared by both: on a request with no `dm_session` cookie, it calls the
-  backend's `POST /auth/demo-session` to mint a fresh, isolated, throwaway tenant for that visitor,
-  then sets the raw key as an `httpOnly`, `Secure`, `SameSite=Strict` cookie. Client JS can't read
-  it; it's only ever forwarded server-side as the `X-API-Key` header on the next backend call.
+- `api/_lib/session.js` is shared by both: it checks for a real login first (see below), and
+  only if that's absent does it fall back to the anonymous demo flow, calling the backend's
+  `POST /auth/demo-session` to mint a fresh, isolated, throwaway tenant for that visitor. Either
+  way the raw key is set as an `httpOnly`, `Secure`, `SameSite=Strict` cookie. Client JS can't
+  read it; it's only ever forwarded server-side as the `X-API-Key` header on the next backend call.
+- `api/auth-google.js` takes the Google ID token from the Sign-in-with-Google button, verifies it
+  via the backend's `POST /auth/google`, and holds the resulting key in its own `dm_user_session`
+  cookie, separate from the demo's `dm_session` so a real login and an anonymous demo visit never
+  collide in the same browser. `api/auth-logout.js` clears it. Because `dm_user_session` takes
+  priority in `_lib/session.js`, signing in doesn't change what the demo section does, just whose
+  tenant it's pointed at: `documents.js` and `query-stream.js` need no changes at all to serve a
+  logged-in user's own documents instead of the shared seeded corpus.
 
 Both functions default to the **Node.js runtime, not Edge**: Edge Functions have a hard,
 non-configurable 25s timeout, shorter than a Render free-tier cold start (30-50s). Node.js
@@ -83,6 +91,7 @@ Copy `.env.example` to `.env` and fill in:
 |---|---|
 | `DOCUMIND_API_BASE` | Base URL of the deployed DocuMind API. **No `VITE_` prefix**: this must stay server-only. Read via `process.env` inside `api/*.js`, never inlined into the client bundle. |
 | `DOCUMIND_PROXY_SHARED_SECRET` | Must match the backend's `DEMO_PROXY_SHARED_SECRET`. Lets the backend's per-IP rate limiter on `POST /auth/demo-session` trust the real visitor IP this proxy forwards, instead of rate-limiting every visitor together under Vercel's own egress IP. Optional for local dev; without it the backend just falls back to its own raw TCP peer address. |
+| `VITE_GOOGLE_CLIENT_ID` | The `VITE_` prefix means this one **is** inlined into the client bundle, unlike the others above, which is fine: an OAuth Client ID is a public identifier, not a secret. Used by the Sign-in-with-Google button to initialize Google Identity Services. |
 
 There is no client-side API key anywhere in this project. Don't add one back.
 

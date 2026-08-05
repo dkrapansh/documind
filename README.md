@@ -274,6 +274,7 @@ in [`eval/RESULTS.md`](eval/RESULTS.md).
 | `POST /auth/keys` | Create a tenant and issue an API key |
 | `POST /auth/keys/revoke` | Revoke the calling key (self-service only) |
 | `POST /auth/demo-session` | Mint an ephemeral, isolated tenant for the public demo |
+| `POST /auth/google` | Verify a Google ID token, get-or-create a tenant by the verified email, and issue an API key |
 | `POST /documents` | Upload a document (`.txt`, `.pdf`, `.docx`) |
 | `GET /documents` | List the requesting tenant's documents |
 | `GET /documents/{id}` | Check ingestion status |
@@ -284,9 +285,16 @@ in [`eval/RESULTS.md`](eval/RESULTS.md).
 | `POST /eval/runs` | Kick off an offline RAGAS evaluation run |
 | `GET /eval/runs/{id}` | Read back a completed evaluation run's scores |
 
-Every endpoint except `/auth/keys`, `/auth/demo-session`, and `/health`
-requires an `X-API-Key` header. Interactive docs are at `/docs` on any
-running instance.
+Every endpoint except `/auth/keys`, `/auth/demo-session`, `/auth/google`,
+and `/health` requires an `X-API-Key` header. `/auth/google` is an
+alternate way to get one of those keys, not a replacement for the
+header itself: a caller who signs in with Google still gets back a
+normal API key and uses it exactly like any other tenant. A repeat
+login by the same Google account reuses the same tenant, since the
+email comes from a verified token rather than raw unauthenticated
+input, and revokes the previous key first, since a raw key can't be
+retrieved again once it's hashed. Interactive docs are at `/docs` on
+any running instance.
 
 ## Running locally
 
@@ -300,7 +308,9 @@ uvicorn app.main:app --reload
 ```
 
 You'll need a `.env` with `DATABASE_URL` and `GEMINI_API_KEY` set. See
-`.env.example`.
+`.env.example`. `GOOGLE_OAUTH_CLIENT_ID` is optional: leaving it unset
+just means `POST /auth/google` refuses every login instead of running
+without it.
 
 ## Running tests
 
