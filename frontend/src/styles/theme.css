@@ -14,6 +14,9 @@
   --off: #D7DDD8;
   --body-text: #3B3B33;
   --chunk-text: #45453C;
+  /* Hero headline underline (h1 .hl::after) - same as --mark here,
+     it's the dark theme where --mark alone is too dim at that size. */
+  --hero-underline: var(--mark);
 }
 
 :root[data-theme="dark"] {
@@ -31,6 +34,10 @@
   --off: #2E302C;
   --body-text: #C7C6BD;
   --chunk-text: #B7B6AC;
+  /* --mark alone is too dim for the hero underline against --canvas at
+     that size here, so this uses --spruce-line at reduced opacity
+     instead - visible without screaming. */
+  --hero-underline: color-mix(in srgb, var(--spruce-line) 55%, transparent);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -49,5 +56,6 @@
     --off: #2E302C;
     --body-text: #C7C6BD;
     --chunk-text: #B7B6AC;
+    --hero-underline: color-mix(in srgb, var(--spruce-line) 55%, transparent);
   }
 }

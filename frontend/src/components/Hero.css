@@ -47,7 +47,7 @@ h1 .hl::after {
   right: -0.04em;
   bottom: 0.08em;
   height: 0.32em;
-  background: var(--mark);
+  background: var(--hero-underline);
   z-index: -1;
   transform: scaleX(0);
   transform-origin: left;
