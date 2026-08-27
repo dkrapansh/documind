@@ -11,9 +11,22 @@ import {
 import { highlightCitations } from "../lib/citationHighlight";
 import "./Demo.css";
 
+// Both presets are items from eval/golden_dataset.json, run against the same
+// corpus scripts/seed_demo_corpus.py seeds, so the demo shows behaviour the
+// eval harness has actually measured rather than two questions picked by hand.
+//
+// gd-001 is a single_chunk_lookup: every answerable golden item scored >= 0.909
+// on the reranker in the threshold probe, comfortably clearing the 0.70 gate.
+// gd-012 is one of the six original expected_refusal items, all of which scored
+// <= 0.405 and refuse cleanly. See eval/RESULTS.md for both measurements.
+//
+// The previous answerable preset asked about employee vacation days, which no
+// document in the seeded corpus has ever mentioned. It only worked because a
+// handbook had been uploaded to the production demo tenant by hand and was
+// never committed, so the flagship demo question refused on any fresh deploy.
 const PRESETS = {
-  answerable: "How many vacation days do new full-time employees get?",
-  refuse: "What was Northwind's total revenue in 2019?",
+  answerable: "How many days do I have to request a refund after purchase?",
+  refuse: "What is Northwind's guaranteed uptime SLA percentage?",
 };
 
 const BASE_STEPS = ["embed query", "dense · top 10", "bm25 · top 10", "RRF fuse", "rerank · top 4"];
@@ -191,7 +204,7 @@ export function Demo() {
     <section className="demo-sec" id="demo" ref={sectionRef}>
       <div className="wrap">
         <div className="sec-eyebrow reveal">Live</div>
-        <h2 className="sec-h reveal">Ask the handbook something.</h2>
+        <h2 className="sec-h reveal">Ask the sample policies something.</h2>
 
         <div className="demo-wrap reveal">
           <div className="demo-top">
