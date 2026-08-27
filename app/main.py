@@ -5,27 +5,44 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app import APP_VERSION
 from app.api.routers import health, auth, documents, history, query, eval
 from app.config import settings
 from app.core.exceptions import AppException
+from app.core.logging import configure_logging
 from app.db.session import SessionLocal
 from app.middleware.auth import AuthMiddleware
 from app.middleware.correlation_id import CorrelationIdMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
+from app.services.health import log_startup_diagnostics
 from app.services.tenant_cleanup import sweep_expired_ephemeral_tenants
+
+# Before uvicorn imports anything else, so the first startup log line is
+# already formatted and carries a correlation id field. Without this the
+# root logger stays at WARNING and every logger.info below is discarded.
+configure_logging(settings.app_env, settings.log_level)
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Best-effort sweep of expired ephemeral tenants on boot, on top of
-    the one POST /auth/demo-session already runs on every mint. Render
-    has no cron, but the instance restarts on every deploy and cold
-    start, so this catches abandoned tenants between restarts without
-    needing new demo traffic. An instance that stays warm with no new
-    traffic will still accumulate expired tenants between boots.
+    """Startup: record what this instance is, then best-effort sweep of
+    expired ephemeral tenants, on top of the one POST /auth/demo-session
+    already runs on every mint. Render has no cron, but the instance
+    restarts on every deploy and cold start, so this catches abandoned
+    tenants between restarts without needing new demo traffic. An
+    instance that stays warm with no new traffic will still accumulate
+    expired tenants between boots.
+
+    Every step here is best-effort on purpose: an unreachable database
+    must not prevent the process from binding a port. A booted instance
+    that reports "not ready" through /health/ready is diagnosable; one
+    that exited during startup is not, which is exactly the failure this
+    deployment hit in production.
     """
+    log_startup_diagnostics()
+
     db = SessionLocal()
     try:
         sweep_expired_ephemeral_tenants(db)
@@ -36,7 +53,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="DocuMind", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="DocuMind", version=APP_VERSION, lifespan=lifespan)
 
 # Execution order per request: CorrelationID -> Auth -> RateLimit -> route.
 app.add_middleware(RateLimitMiddleware)
