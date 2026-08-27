@@ -1,3 +1,6 @@
+import sys
+
+from pydantic import AliasChoices, Field, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
@@ -5,6 +8,35 @@ class Settings(BaseSettings):
 
     app_env: str = "development"
     database_url: str
+
+    log_level: str = "INFO"
+
+    # Reported by GET /health/ready so a running instance can be matched
+    # to the commit it was built from. Render exposes the deployed commit
+    # as RENDER_GIT_COMMIT; GIT_SHA is the portable override for anywhere
+    # else. "unknown" rather than a crash: not knowing the SHA is a
+    # diagnostic inconvenience, not a reason to refuse to serve traffic.
+    git_sha: str = Field(
+        default="unknown",
+        validation_alias=AliasChoices("GIT_SHA", "RENDER_GIT_COMMIT"),
+    )
+
+    # SQLAlchemy's defaults (pool 5, overflow 10, 30s checkout wait) were
+    # being used implicitly. Made explicit because each in-flight request
+    # holds TWO connections for a moment, not one: AuthMiddleware opens
+    # its own session to look up the API key before the route's get_db
+    # dependency opens another. A short pool_timeout is deliberate - a
+    # caller waiting 30s for a connection has already timed out somewhere
+    # upstream, so failing fast is more useful than queueing.
+    db_pool_size: int = 5
+    db_max_overflow: int = 10
+    db_pool_timeout_seconds: int = 10
+    # Postgres-side ceilings, so a wedged query can't pin a connection
+    # (and a request thread) indefinitely. Ingestion and eval jobs run
+    # their own long work in Python, not in single statements, so a
+    # per-statement bound doesn't cut them short.
+    db_connect_timeout_seconds: int = 10
+    db_statement_timeout_seconds: int = 30
 
     rate_limit_requests: int = 60
     rate_limit_window_seconds: int = 60
@@ -96,4 +128,33 @@ class Settings(BaseSettings):
     # /auth/google refuses every login instead of silently accepting
     # tokens meant for a different app.
     google_oauth_client_id: str | None = None
-settings = Settings()
+
+
+def _load_settings() -> Settings:
+    """Turn a missing required env var into one readable line instead of a
+    pydantic traceback.
+
+    This runs at import time, so a ValidationError here kills the process
+    before uvicorn binds a port - the same total-outage signature as a
+    failed migration, with no health endpoint left alive to explain it.
+    Failing fast is still right (serving traffic with no DATABASE_URL is
+    worse), but the operator reading Render's logs needs the variable's
+    name, not a stack trace ending in pydantic_core.
+    """
+    try:
+        return Settings()
+    except ValidationError as exc:
+        missing = sorted({str(error["loc"][0]).upper() for error in exc.errors() if error["loc"]})
+        print(
+            "FATAL: DocuMind cannot start, required configuration is missing or invalid: "
+            + ", ".join(missing),
+            file=sys.stderr,
+        )
+        print(
+            "Set these environment variables (see .env.example) and redeploy.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1) from exc
+
+
+settings = _load_settings()
