@@ -9,4 +9,9 @@ COPY . .
 
 ENV GIT_PYTHON_REFRESH=quiet
 
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+RUN chmod +x scripts/start.sh
+
+# Migrations no longer gate the server. See scripts/start.sh for why the
+# previous `alembic upgrade head && uvicorn ...` turned every database
+# problem into a total outage with no way to diagnose it.
+CMD ["./scripts/start.sh"]

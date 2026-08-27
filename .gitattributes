@@ -1,0 +1,11 @@
+# Shell scripts must keep LF endings regardless of the checkout platform.
+# This repo is developed on Windows with core.autocrlf=true, which rewrites
+# LF to CRLF on checkout. A CRLF shebang line fails inside a Linux
+# container with "no such file or directory", pointing at the interpreter
+# rather than at the line ending, which is a genuinely confusing way to
+# discover the problem. scripts/start.sh is the container entrypoint, so
+# that failure would be a total outage on a fresh Windows clone.
+*.sh text eol=lf
+
+# Same reasoning: the Dockerfile is read by a Linux builder.
+Dockerfile text eol=lf

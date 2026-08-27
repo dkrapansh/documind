@@ -4,7 +4,14 @@ services:
     runtime: docker
     plan: free
     dockerfilePath: ./Dockerfile
-    healthCheckPath: /health
+    # Liveness, not readiness. Render restarts an instance that fails its
+    # health check, so pointing this at a dependency-aware endpoint would
+    # turn a database outage into a restart loop: every new instance would
+    # fail the same check and be killed before anyone could read its logs.
+    # /health/live proves the process serves HTTP; /health/ready is for
+    # humans and for the frontend's wake-up UX, and reports 503 with a
+    # per-dependency breakdown when something is actually broken.
+    healthCheckPath: /health/live
     envVars:
       - key: DATABASE_URL
         sync: false
@@ -12,3 +19,9 @@ services:
         sync: false
       - key: APP_ENV
         value: production
+      - key: LOG_LEVEL
+        value: INFO
+    # GIT_SHA is deliberately not declared here. Render injects
+    # RENDER_GIT_COMMIT into every service automatically, and
+    # app/config.py reads either name, so /health/ready reports the
+    # deployed commit with no configuration required.
