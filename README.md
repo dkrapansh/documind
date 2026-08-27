@@ -106,7 +106,8 @@ documind/
 │   ├── golden_dataset.json          # 41 question/answer/category items (v3)
 │   ├── run_eval.py                  # CLI entry point for an offline eval run
 │   └── RESULTS.md                   # eval history and threshold-tuning notes
-├── tests/                             # 18 files, 79 tests, real Postgres
+├── scripts/                            # container entrypoint, DB connectivity check
+├── tests/                             # 19 files, 87 tests, real Postgres
 ├── frontend/                           # React + Vite landing page and demo
 │   ├── src/                             # components, scroll animation, api client
 │   └── api/                             # Vercel proxy: session cookie, no client-side key
@@ -250,6 +251,29 @@ in [`eval/RESULTS.md`](eval/RESULTS.md).
 - **Ephemeral tenants are swept on every boot**, on top of the sweep
   that already runs on new demo traffic, since Render has no cron job
   and an idle instance would otherwise never clean up.
+- **A failed migration used to take the whole service down.** The container
+  started with `alembic upgrade head && uvicorn ...`, so any database
+  problem made Alembic exit non-zero, uvicorn never bound a port, and the
+  container died. Nothing survived to report why, since the health endpoint
+  cannot answer when the process serving it never started. Migrations still
+  run and still fail loudly, but the API now starts regardless, and
+  `/health/ready` reports which dependency is broken.
+- **Liveness and readiness are separate endpoints.** Liveness touches no
+  dependency, so a database outage cannot fail the platform health check and
+  get every replacement instance restarted into the same failure. Readiness
+  reports version, git SHA, and per-dependency status, and it compares the
+  database's schema revision against the running build so a half-deployed
+  instance fails readiness instead of quietly erroring on missing columns.
+- **Logs are structured and carry a correlation ID.** Nothing configured
+  logging before, so under uvicorn the root logger stayed at WARNING and
+  every application log line was silently discarded. Redaction happens in the
+  formatter rather than at each call site, so a new log statement cannot leak
+  a credential by forgetting to strip it.
+- **The database pool is bounded and every connection has timeouts.** Each
+  in-flight request briefly holds two connections, not one, since the auth
+  middleware opens its own session for the API key lookup before the route's
+  session opens. A statement timeout keeps one wedged query from pinning a
+  connection, and therefore a request thread, indefinitely.
 - **The reranker used to be a PyTorch model** that cost about 555MB of
   memory to load, over Render's free tier limit. Swapped for
   `flashrank`, an ONNX version of the same kind of model, which costs
@@ -284,9 +308,11 @@ in [`eval/RESULTS.md`](eval/RESULTS.md).
 | `GET /history/{session_id}` | Prior questions and answers in a session |
 | `POST /eval/runs` | Kick off an offline RAGAS evaluation run |
 | `GET /eval/runs/{id}` | Read back a completed evaluation run's scores |
+| `GET /health/live` | Liveness: the process is serving HTTP. Touches no dependency |
+| `GET /health/ready` | Readiness: version, git SHA, and per-dependency status. 503 if unready |
 
 Every endpoint except `/auth/keys`, `/auth/demo-session`, `/auth/google`,
-and `/health` requires an `X-API-Key` header. `/auth/google` is an
+and the `/health` endpoints requires an `X-API-Key` header. `/auth/google` is an
 alternate way to get one of those keys, not a replacement for the
 header itself: a caller who signs in with Google still gets back a
 normal API key and uses it exactly like any other tenant. A repeat
@@ -318,7 +344,7 @@ without it.
 pytest -m "not live_api"
 ```
 
-79 tests, run against a real Postgres instance with the schema built by
+87 tests, run against a real Postgres instance with the schema built by
 the actual `alembic upgrade head` chain, not a shortcut that only checks
 today's model definitions. They cover multi-tenant isolation, the full
 retrieval funnel, ingestion, caching, rate limiting, the refusal path,
