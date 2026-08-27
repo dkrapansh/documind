@@ -28,7 +28,6 @@ jobs:
     env:
       DATABASE_URL: postgresql+psycopg://documind:documind@localhost:5432/documind_test
       GEMINI_API_KEY: ci-placeholder-key
-      OPENAI_API_KEY: ci-placeholder-key
       APP_ENV: test
 
     steps:
