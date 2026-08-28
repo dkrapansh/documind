@@ -6,6 +6,14 @@ from dotenv import load_dotenv
 env_test_path = Path(__file__).resolve().parent.parent / ".env.test"
 load_dotenv(env_test_path, override=True)
 
+# Set before app.main is imported below, since the worker starts in the app's
+# lifespan. Tests drive ingestion explicitly via process_available_jobs() so
+# assertions are deterministic; a live worker thread would race them for the
+# same jobs. Set here rather than in .env.test because that file is
+# gitignored and so never reaches CI, where the default would leave the
+# worker running and make the suite flaky.
+os.environ["INGESTION_WORKER_ENABLED"] = "false"
+
 import pytest
 from alembic import command
 from alembic.config import Config
