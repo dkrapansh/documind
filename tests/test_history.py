@@ -1,4 +1,5 @@
 import io
+from app.services.ingestion_worker import process_available_jobs as drain_ingestion
 
 def _auth_headers(client, tenant_name: str = "acme") -> dict:
     response = client.post("/auth/keys", json={"tenant_name": tenant_name})
@@ -15,6 +16,7 @@ def _upload_and_wait_ready(client, headers) -> int:
         headers=headers,
         files={"file": ("policy.txt", io.BytesIO(file_content), "text/plain")},
     )
+    drain_ingestion()
     document_id = upload_response.json()["id"]
     client.get(f"/documents/{document_id}", headers=headers)
     return document_id

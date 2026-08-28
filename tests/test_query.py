@@ -1,6 +1,7 @@
 import io
 
 from app.models.query_log import QueryLog
+from app.services.ingestion_worker import process_available_jobs as drain_ingestion
 
 def _auth_headers(client, tenant_name: str = "acme") -> dict:
     response = client.post("/auth/keys", json={"tenant_name": tenant_name})
@@ -31,6 +32,7 @@ def test_query_end_to_end_returns_grounded_answer_with_sources(client, monkeypat
         headers=headers,
         files={"file": ("policy.txt", io.BytesIO(file_content), "text/plain")},
     )
+    drain_ingestion()
     assert upload_response.status_code == 200
     document_id = upload_response.json()["id"]
 
@@ -80,6 +82,7 @@ def test_query_wraps_untrusted_chunk_content_as_labeled_context_not_instructions
         headers=headers,
         files={"file": ("shipping.txt", io.BytesIO(injected_content), "text/plain")},
     )
+    drain_ingestion()
     document_id = upload_response.json()["id"]
     client.get(f"/documents/{document_id}", headers=headers)
 
@@ -110,6 +113,7 @@ def test_query_writes_a_query_log_row(client, db_session, monkeypatch):
         headers=headers,
         files={"file": ("policy.txt", io.BytesIO(file_content), "text/plain")},
     )
+    drain_ingestion()
     document_id = upload_response.json()["id"]
     client.get(f"/documents/{document_id}", headers=headers)
 
@@ -162,6 +166,7 @@ def test_query_second_identical_call_hits_cache_and_skips_llm(client, monkeypatc
         headers=headers,
         files={"file": ("policy.txt", io.BytesIO(file_content), "text/plain")},
     )
+    drain_ingestion()
     document_id = upload_response.json()["id"]
     client.get(f"/documents/{document_id}", headers=headers)
 
@@ -201,6 +206,7 @@ def test_query_cache_invalidates_when_a_new_document_finishes_ingesting(client, 
         headers=headers,
         files={"file": ("shipping.txt", io.BytesIO(file_content), "text/plain")},
     )
+    drain_ingestion()
     document_id = upload_response.json()["id"]
     client.get(f"/documents/{document_id}", headers=headers)
 
@@ -234,6 +240,7 @@ def test_query_cache_is_isolated_per_tenant(client, monkeypatch):
         headers=owner_headers,
         files={"file": ("policy.txt", io.BytesIO(file_content), "text/plain")},
     )
+    drain_ingestion()
     document_id = upload_response.json()["id"]
     client.get(f"/documents/{document_id}", headers=owner_headers)
 
@@ -266,6 +273,7 @@ def test_query_returns_503_and_still_logs_when_generation_fails(client, db_sessi
         headers=headers,
         files={"file": ("policy.txt", io.BytesIO(file_content), "text/plain")},
     )
+    drain_ingestion()
     document_id = upload_response.json()["id"]
     client.get(f"/documents/{document_id}", headers=headers)
 
@@ -300,6 +308,7 @@ def test_query_generation_failure_is_not_cached(client, monkeypatch):
         headers=headers,
         files={"file": ("policy.txt", io.BytesIO(file_content), "text/plain")},
     )
+    drain_ingestion()
     document_id = upload_response.json()["id"]
     client.get(f"/documents/{document_id}", headers=headers)
 

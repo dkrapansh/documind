@@ -2,6 +2,7 @@ import io
 
 from app.models.chunk import Chunk
 from app.models.document import Document
+from app.services.ingestion_worker import process_available_jobs as drain_ingestion
 
 def _fake_embed_text(text: str) -> list[float]:
     """Stand-in for the real OpenAI call, instant, free, deterministic.
@@ -25,6 +26,7 @@ def test_upload_ingests_document_into_chunks_with_embeddings(client, db_session,
         headers=headers,
         files={"file": ("ingestion_test.txt", io.BytesIO(file_content), "text/plain")},
     )
+    drain_ingestion()
     assert response.status_code == 200
     document_id = response.json()["id"]
 
@@ -67,6 +69,7 @@ def test_upload_docx_extracts_paragraph_and_table_text(client, db_session, monke
             )
         },
     )
+    drain_ingestion()
     document_id = response.json()["id"]
 
     status = client.get(f"/documents/{document_id}", headers=headers).json()
@@ -88,11 +91,13 @@ def test_reupload_same_file_is_a_noop(client, db_session, monkeypatch):
         headers=headers,
         files={"file": ("dup_test.txt", io.BytesIO(file_content), "text/plain")},
     )
+    drain_ingestion()
     second = client.post(
         "/documents",
         headers=headers,
         files={"file": ("dup_test.txt", io.BytesIO(file_content), "text/plain")},
     )
+    drain_ingestion()
 
     assert first.json()["id"] == second.json()["id"]
 

@@ -1,4 +1,5 @@
 import io
+from app.services.ingestion_worker import process_available_jobs as drain_ingestion
 
 def _auth_headers(client, tenant_name: str = "acme") -> dict:
     response = client.post("/auth/keys", json={"tenant_name": tenant_name})
@@ -19,6 +20,7 @@ def test_list_documents_is_scoped_to_the_requesting_tenant(client, monkeypatch):
         headers=owner_headers,
         files={"file": ("owner.txt", io.BytesIO(b"owner content"), "text/plain")},
     )
+    drain_ingestion()
 
     owner_list = client.get("/documents", headers=owner_headers)
     other_list = client.get("/documents", headers=other_headers)
@@ -37,6 +39,7 @@ def test_get_document_status_404s_for_a_different_tenant(client, monkeypatch):
         headers=owner_headers,
         files={"file": ("owner.txt", io.BytesIO(b"owner content"), "text/plain")},
     )
+    drain_ingestion()
     document_id = upload_response.json()["id"]
 
     owner_response = client.get(f"/documents/{document_id}", headers=owner_headers)
@@ -56,6 +59,7 @@ def test_upload_rejects_unsupported_file_extension(client):
             "file": ("malware.exe", io.BytesIO(b"binary junk"), "application/octet-stream")
         },
     )
+    drain_ingestion()
 
     assert response.status_code == 400
     assert "Unsupported file type" in response.json()["detail"]
@@ -71,6 +75,7 @@ def test_delete_document_removes_it_and_its_chunks(client, db_session, monkeypat
         headers=headers,
         files={"file": ("owner.txt", io.BytesIO(b"owner content"), "text/plain")},
     )
+    drain_ingestion()
     document_id = upload_response.json()["id"]
     assert db_session.query(Chunk).filter(Chunk.document_id == document_id).count() > 0
 
@@ -92,6 +97,7 @@ def test_delete_document_404s_for_a_different_tenant(client, monkeypatch):
         headers=owner_headers,
         files={"file": ("owner.txt", io.BytesIO(b"owner content"), "text/plain")},
     )
+    drain_ingestion()
     document_id = upload_response.json()["id"]
 
     response = client.delete(f"/documents/{document_id}", headers=other_headers)
@@ -114,6 +120,7 @@ def test_upload_rejects_a_file_over_the_configured_size_cap(client, monkeypatch)
         headers=headers,
         files={"file": ("big.txt", io.BytesIO(b"x" * 1000), "text/plain")},
     )
+    drain_ingestion()
 
     assert response.status_code == 413
     assert "exceeds the maximum allowed size" in response.json()["detail"]
@@ -128,5 +135,6 @@ def test_upload_within_the_size_cap_still_succeeds(client, monkeypatch):
         headers=headers,
         files={"file": ("small.txt", io.BytesIO(b"small content"), "text/plain")},
     )
+    drain_ingestion()
 
     assert response.status_code == 200

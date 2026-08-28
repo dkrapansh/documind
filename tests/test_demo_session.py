@@ -1,6 +1,7 @@
 import io
 
 from app.models.tenant import Tenant
+from app.services.ingestion_worker import process_available_jobs as drain_ingestion
 
 def _fake_embed_text(text: str) -> list[float]:
     return [0.1] * 1536
@@ -17,6 +18,7 @@ def _seed_demo_tenant(client, monkeypatch) -> None:
         headers=seed_headers,
         files={"file": ("handbook.txt", io.BytesIO(b"vacation policy content"), "text/plain")},
     )
+    drain_ingestion()
 
 def test_demo_session_issues_a_working_key_for_a_fresh_isolated_tenant(client, monkeypatch):
     response = client.post("/auth/demo-session")
@@ -65,6 +67,7 @@ def test_demo_session_tenants_are_isolated_from_each_other(client, monkeypatch):
         headers={"X-API-Key": visitor_a},
         files={"file": ("a-private.txt", io.BytesIO(b"visitor a's private doc"), "text/plain")},
     )
+    drain_ingestion()
 
     a_docs = client.get("/documents", headers={"X-API-Key": visitor_a}).json()
     b_docs = client.get("/documents", headers={"X-API-Key": visitor_b}).json()
