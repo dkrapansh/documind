@@ -11,22 +11,24 @@ import {
 import { highlightCitations } from "../lib/citationHighlight";
 import "./Demo.css";
 
-// Both presets are items from eval/golden_dataset.json, run against the same
-// corpus scripts/seed_demo_corpus.py seeds, so the demo shows behaviour the
-// eval harness has actually measured rather than two questions picked by hand.
+// Both presets are verified against the live demo corpus, which is the
+// Northwind Traders employee handbook: the answerable one returns a grounded
+// answer with a source, the refusal one refuses cleanly.
 //
-// gd-001 is a single_chunk_lookup: every answerable golden item scored >= 0.909
-// on the reranker in the threshold probe, comfortably clearing the 0.70 gate.
-// gd-012 is one of the six original expected_refusal items, all of which scored
-// <= 0.405 and refuse cleanly. See eval/RESULTS.md for both measurements.
+// Do not swap these for eval/golden_dataset.json items. That dataset is built
+// on eval/golden_corpus/, a fictional cloud storage product, which is a
+// different corpus from the one the demo tenant is seeded with. Questions from
+// the golden dataset refuse here, including the answerable ones. That mistake
+// was made once already and shipped a demo whose flagship question refused.
 //
-// The previous answerable preset asked about employee vacation days, which no
-// document in the seeded corpus has ever mentioned. It only worked because a
-// handbook had been uploaded to the production demo tenant by hand and was
-// never committed, so the flagship demo question refused on any fresh deploy.
+// The real gap this depends on: the demo corpus exists only as rows in the
+// production database, uploaded by hand and never committed, and there is no
+// seed script. A fresh deploy has an empty demo tenant and both presets refuse.
+// Committing the handbook plus a seed script is what would make these presets
+// hold on any deploy rather than only on this one.
 const PRESETS = {
-  answerable: "How many days do I have to request a refund after purchase?",
-  refuse: "What is Northwind's guaranteed uptime SLA percentage?",
+  answerable: "How many vacation days do new full-time employees get?",
+  refuse: "What was Northwind's total revenue in 2019?",
 };
 
 const BASE_STEPS = ["embed query", "dense · top 10", "bm25 · top 10", "RRF fuse", "rerank · top 4"];
