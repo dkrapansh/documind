@@ -68,7 +68,29 @@ class Settings(BaseSettings):
     # eval/RESULTS.md.
     confidence_threshold: float = 0.7
 
-    storage_dir: str = "storage"
+    # Lets tests drive ingestion deterministically by calling
+    # process_available_jobs() themselves instead of racing a live thread.
+    # Production always leaves this on.
+    ingestion_worker_enabled: bool = True
+
+    # Ingestion job settings (services/ingestion_worker.py).
+    #
+    # A claimed job is owned for lease_seconds. Long enough that a genuinely
+    # slow document (hundreds of serial embedding calls, each with retries)
+    # is not reclaimed while still being worked on, short enough that a
+    # crashed worker's job is recoverable in minutes rather than hours.
+    ingestion_lease_seconds: int = 600
+    # attempt_count increments at claim time, so this bounds total attempts
+    # including ones where the worker died without reporting back.
+    ingestion_max_attempts: int = 3
+    # Upper bound on how long an enqueued job waits when the in-process wake
+    # signal is missed (another process enqueued it, or the signal raced).
+    ingestion_poll_seconds: int = 5
+    # Bounds embedding spend per upload. The 20MB upload cap limits bytes,
+    # not work: a large text file produces thousands of chunks, each a
+    # separate paid embedding call, so without this one upload could consume
+    # a whole day of free-tier quota.
+    max_chunks_per_document: int = 400
 
     # POST /documents has no framework-level body cap on the backend
     # itself (the Vercel proxy's 4.5MB request limit only covers the

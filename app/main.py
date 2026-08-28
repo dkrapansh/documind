@@ -15,6 +15,7 @@ from app.middleware.auth import AuthMiddleware
 from app.middleware.correlation_id import CorrelationIdMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.services.health import log_startup_diagnostics
+from app.services.ingestion_worker import recover_stale, start_worker, stop_worker
 from app.services.tenant_cleanup import sweep_expired_ephemeral_tenants
 
 # Before uvicorn imports anything else, so the first startup log line is
@@ -50,7 +51,29 @@ async def lifespan(app: FastAPI):
         logger.exception("startup sweep of expired ephemeral tenants failed")
     finally:
         db.close()
+
+    # A restart is exactly when stranded ingestion jobs exist, since the
+    # thing that stranded them is usually the restart itself (a deploy, an
+    # OOM kill, a platform move). Recovering here means a document caught
+    # mid-ingestion by a deploy resumes on the next boot instead of sitting
+    # at "processing" forever.
+    try:
+        recover_stale()
+    except Exception:
+        logger.exception("startup recovery of stale ingestion jobs failed")
+
+    if settings.ingestion_worker_enabled:
+        try:
+            start_worker()
+        except Exception:
+            logger.exception("failed to start the ingestion worker")
+
     yield
+
+    # Ask the worker to finish its current job and exit. A job still running
+    # when the timeout expires is not lost: its lease expires and the next
+    # process to boot reclaims it.
+    stop_worker()
 
 
 app = FastAPI(title="DocuMind", version=APP_VERSION, lifespan=lifespan)
