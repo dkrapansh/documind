@@ -49,6 +49,24 @@ class InvalidGoogleTokenException(AppException):
     status_code = 401
     detail = "Invalid or expired Google login"
 
+class UnreadableDocumentException(AppException):
+    """Extraction ran and produced nothing usable. Raised during the upload
+    request itself, now that extraction happens there: the caller finds out
+    immediately, with a reason, instead of polling a document that silently
+    lands in "failed" minutes later."""
+
+    status_code = 422
+
+    def __init__(self, detail: str):
+        self.detail = detail
+        super().__init__(self.detail)
+
+
+class MissingFilenameException(AppException):
+    status_code = 400
+    detail = "Upload is missing a filename. Send the file as a named multipart form field."
+
+
 class PayloadTooLargeException(AppException):
     status_code = 413
 
