@@ -1,25 +1,21 @@
 import hashlib
-from pathlib import Path
 
-from app.config import settings
 
 def compute_content_hash(file_bytes: bytes) -> str:
+    """SHA-256 of the uploaded bytes, used as the per-tenant deduplication
+    key so re-uploading the same file never pays to embed it twice."""
     return hashlib.sha256(file_bytes).hexdigest()
 
-def save_file(content_hash: str, original_filename: str, file_bytes: bytes) -> Path:
-    storage_path = Path(settings.storage_dir)
-    storage_path.mkdir(parents=True, exist_ok=True)
 
-    extension = Path(original_filename).suffix
-    destination = storage_path / f"{content_hash}{extension}"
-
-    if not destination.exists():
-        destination.write_bytes(file_bytes)
-
-    return destination
-
-def load_file(content_hash: str, original_filename: str) -> bytes:
-    storage_path = Path(settings.storage_dir)
-    extension = Path(original_filename).suffix
-    source = storage_path / f"{content_hash}{extension}"
-    return source.read_bytes()
+# save_file/load_file used to write the raw upload to a local `storage/`
+# directory and read it back in the background job. They are gone, along with
+# that directory, because the disk they wrote to is ephemeral on the
+# deployment target: any restart between upload and ingestion destroyed the
+# bytes, so the job could never succeed and no retry could fix it. Extracted
+# text now lives in Postgres (models/document_content.py) alongside the
+# document row, which is also what makes ingestion restartable.
+#
+# The tradeoff: the original bytes are not kept, so re-extracting with a
+# better parser (or adding OCR later) needs a re-upload. Recorded here rather
+# than only in a commit message, because "where did the raw file go" is the
+# obvious question when reading this module.
