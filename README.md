@@ -107,7 +107,7 @@ documind/
 │   ├── run_eval.py                  # CLI entry point for an offline eval run
 │   └── RESULTS.md                   # eval history and threshold-tuning notes
 ├── scripts/                            # container entrypoint, DB connectivity check
-├── tests/                             # 19 files, 87 tests, real Postgres
+├── tests/                             # 20 files, 103 tests, real Postgres
 ├── frontend/                           # React + Vite landing page and demo
 │   ├── src/                             # components, scroll animation, api client
 │   └── api/                             # Vercel proxy: session cookie, no client-side key
@@ -152,26 +152,66 @@ retrieved text as data, never as instructions, so a document that says
 ## How ingestion works
 
 ```mermaid
-flowchart LR
-    Upload["POST /documents"] --> Hash{"Content hash\nalready seen?"}
-    Hash -- yes --> Existing["Return existing doc, no reingestion"]
-    Hash -- no --> Pending["Create doc, status = pending\nreturn immediately"]
-    Pending -.background task.-> Extract["Extract text\n.txt / .pdf / .docx"]
-    Extract --> Chunk["Chunk: 500 tokens, 60 overlap"]
-    Chunk --> Embed["Embed each chunk"]
-    Embed --> StoreDb["Store chunks + embeddings"]
-    StoreDb --> Ready["status = ready"]
-    Extract -.any failure.-> Failed["status = failed"]
+flowchart TB
+    Upload["POST /documents"] --> Hash{"Content hash already seen?"}
+    Hash -- "yes, and not failed" --> Existing["Return existing doc"]
+    Hash -- no --> Extract["Extract text now: .txt / .pdf / .docx"]
+    Extract -- "no text" --> Reject["422 with a reason"]
+    Extract -- ok --> Enqueue["Store text + document row<br/>status = pending, return"]
+    Enqueue -. "durable job in Postgres" .-> Claim["Worker claims a job<br/>FOR UPDATE SKIP LOCKED<br/>takes a lease"]
+    Claim --> Embed["Chunk, then embed each chunk"]
+    Embed --> StoreDb["Replace chunks, status = ready"]
+    Claim -. "worker dies" .-> Stale["Lease expires"]
+    Stale --> Claim
+    Embed -- "permanent failure" --> Failed["status = failed, with a reason"]
+    Embed -- "transient failure" --> Retry["Back to pending<br/>if attempts remain"]
+    Retry --> Claim
 ```
 
-Upload returns immediately with a `pending` status. Chunking, embedding,
-and storage happen in a background task, since embedding a large document
-can take longer than a client should wait. The client polls
-`GET /documents/{id}` until it's `ready` or `failed`. Re-uploading the
-same file is a no-op, checked by content hash, so it never wastes an
-embedding call twice. Uploads are capped at 20MB and read in small
-chunks instead of all at once, since the backend runs on a
-memory-limited instance.
+Upload extracts the text, stores it, and returns `pending` immediately. The
+slow part, embedding every chunk, happens in the background, since it can
+take far longer than a client should wait. The client polls
+`GET /documents/{id}` until it is `ready` or `failed`.
+
+**The job is a row in Postgres, not a task in memory.** This is the part
+worth explaining, because the first version got it wrong. Ingestion used to
+run in a FastAPI `BackgroundTask`, which exists only inside the running
+process. When the process died mid-job, and on a free tier it dies often, the
+document stayed at `processing` forever: nothing recorded that the work had
+started, so nothing could resume it and no retry could reach it.
+
+Now a worker claims a job with `UPDATE ... WHERE id = (SELECT ... FOR UPDATE
+SKIP LOCKED LIMIT 1)`. One statement, so there is no gap between choosing a
+job and owning it; `SKIP LOCKED` means a second worker steps over a locked
+row and takes the next one rather than blocking. The claim takes a **lease**
+rather than a lock. If the worker dies, the lease simply expires and the job
+becomes claimable again, which is what makes a crash recoverable with no
+coordinator and no heartbeat protocol. Recovery runs on startup, because a
+restart is exactly when stranded jobs exist.
+
+`attempt_count` increments when a job is **claimed**, not when it finishes, so
+a job that reliably kills its worker still burns attempts and lands in
+`failed` instead of looping forever.
+
+Retries are safe because ingestion replaces a document's chunks rather than
+appending, and a unique constraint on `(document_id, chunk_index)` is the
+backstop: if that delete were ever missed, the insert fails loudly instead of
+silently doubling every chunk, which would distort BM25 term statistics and
+let the same text occupy several slots in the final reranked context.
+
+Extracted text lives in Postgres, not on local disk. The deployment target's
+filesystem is ephemeral, so a restart between upload and ingestion used to
+destroy the input: the job could never succeed and no retry could fix it.
+The tradeoff is that the original bytes are not kept, so re-extracting with a
+better parser later needs a re-upload.
+
+Re-uploading the same file is a no-op, checked by content hash, so it never
+pays to embed twice. Failed documents are excluded from that check, which
+makes re-uploading the retry mechanism; previously a re-upload returned the
+failed row with HTTP 200, so the upload looked fine but could never become
+ready. Uploads are capped at 20MB, read in small chunks rather than all at
+once, and capped again at 400 chunks per document, since the byte limit
+bounds size but not embedding spend.
 
 ## Multi-tenancy
 
@@ -251,6 +291,11 @@ in [`eval/RESULTS.md`](eval/RESULTS.md).
 - **Ephemeral tenants are swept on every boot**, on top of the sweep
   that already runs on new demo traffic, since Render has no cron job
   and an idle instance would otherwise never clean up.
+- **Ingestion is a durable job, not an in-memory task.** It used to run in a
+  FastAPI `BackgroundTask`, so a process death mid-job left the document at
+  `processing` forever with nothing recording that the work had started.
+  Jobs now live in Postgres and are claimed under a lease, so a crashed
+  worker's job is reclaimed rather than lost. See "How ingestion works" above.
 - **A failed migration used to take the whole service down.** The container
   started with `alembic upgrade head && uvicorn ...`, so any database
   problem made Alembic exit non-zero, uvicorn never bound a port, and the
@@ -344,7 +389,7 @@ without it.
 pytest -m "not live_api"
 ```
 
-87 tests, run against a real Postgres instance with the schema built by
+103 tests, run against a real Postgres instance with the schema built by
 the actual `alembic upgrade head` chain, not a shortcut that only checks
 today's model definitions. They cover multi-tenant isolation, the full
 retrieval funnel, ingestion, caching, rate limiting, the refusal path,
