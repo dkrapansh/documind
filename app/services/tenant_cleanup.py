@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.repositories.api_keys import delete_by_tenant as delete_keys_by_tenant
 from app.repositories.chunks import delete_by_tenant as delete_chunks_by_tenant
+from app.repositories.document_contents import delete_by_tenant as delete_contents_by_tenant
 from app.repositories.documents import delete_by_tenant as delete_documents_by_tenant
 from app.repositories.query_logs import delete_by_tenant as delete_query_logs_by_tenant
 from app.repositories.tenants import delete as delete_tenant, get_expired_ephemeral
@@ -23,6 +24,9 @@ def sweep_expired_ephemeral_tenants(db: Session) -> int:
     expired = get_expired_ephemeral(db, settings.ephemeral_tenant_ttl_minutes)
     for tenant in expired:
         delete_chunks_by_tenant(db, tenant.id)
+        # Before the documents themselves, since content rows are found by
+        # joining back to documents for this tenant.
+        delete_contents_by_tenant(db, tenant.id)
         delete_documents_by_tenant(db, tenant.id)
         delete_query_logs_by_tenant(db, tenant.id)
         delete_keys_by_tenant(db, tenant.id)

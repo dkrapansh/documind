@@ -11,13 +11,15 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.db.session import SessionLocal
 from app.models.eval import EvalRun
-from app.repositories.documents import create_document, get_by_content_hash
+from app.repositories.document_contents import upsert_content
+from app.repositories.documents import claim_next_pending, create_document, get_by_content_hash
 from app.repositories.eval_runs import create_eval_result, create_eval_run, get_eval_run
 from app.repositories.tenants import create_tenant, get_by_name
 from app.services.answering import REFUSAL_ANSWER, answer_question
-from app.services.file_storage import compute_content_hash, save_file
+from app.services.file_storage import compute_content_hash
 from app.services.ingestion import process_document
 from app.services.reranking import retrieve_ranked
+from app.services.text_extraction import extract_text
 
 logger = logging.getLogger(__name__)
 
@@ -70,10 +72,14 @@ def _ensure_eval_tenant(db: Session) -> int:
 
 
 def _ensure_golden_corpus_ingested(db: Session, tenant_id: int) -> None:
-    """Ingest every eval/golden_corpus/*.txt file through the real
-    upload pipeline (save_file -> create_document -> process_document),
-    not a shortcut, so eval measures the exact path production uploads
-    go through. Content-hash dedup makes reruns a no-op.
+    """Ingest every eval/golden_corpus/*.txt file through the real ingestion
+    pipeline, not a shortcut, so eval measures the exact path production
+    uploads go through. Content-hash dedup makes reruns a no-op.
+
+    Mirrors the upload route: extract, store the text, create the document,
+    then run the job. It calls process_document directly rather than waiting
+    on the background worker because the eval harness is a synchronous script
+    that needs the corpus ready before it can score anything.
     """
     for path in sorted(GOLDEN_CORPUS_DIR.glob("*.txt")):
         file_bytes = path.read_bytes()
@@ -82,9 +88,21 @@ def _ensure_golden_corpus_ingested(db: Session, tenant_id: int) -> None:
         if get_by_content_hash(db, tenant_id, content_hash) is not None:
             continue
 
-        save_file(content_hash, path.name, file_bytes)
+        extracted_text = extract_text(file_bytes, path.name)
         document = create_document(db, tenant_id, path.name, content_hash)
-        process_document(document.id)
+        upsert_content(db, document.id, extracted_text)
+        db.commit()
+
+        # Claim it the same way the worker would, so attempt_count and the
+        # lease are set consistently rather than left in a state no real
+        # ingestion would produce.
+        claimed_id = claim_next_pending(
+            db,
+            lease_seconds=settings.ingestion_lease_seconds,
+            max_attempts=settings.ingestion_max_attempts,
+        )
+        if claimed_id is not None:
+            process_document(claimed_id)
 
 
 def load_golden_dataset() -> dict:
