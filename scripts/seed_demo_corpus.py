@@ -140,6 +140,28 @@ def main() -> int:
                 skipped += 1
                 continue
 
+            # Same filename, different content hash. Deduplication is by
+            # content, so this would sail past the check above and leave the
+            # tenant holding two copies of the same document under one name.
+            # The demo clones every ready document into each visitor's
+            # tenant, so a duplicate is not cosmetic: it distorts BM25 term
+            # statistics, lets RRF fuse a chunk with itself, and lets the
+            # same text occupy several slots in the final reranked context.
+            #
+            # This is a live risk for exactly this corpus. The committed file
+            # was recovered from a stored chunk rather than the original
+            # upload, so a trailing newline or CRLF difference is enough to
+            # change its hash while the text a reader sees is identical.
+            same_name = [d for d in list_by_tenant(db, tenant.id) if d.filename == path.name]
+            if same_name and not args.replace:
+                print("  SKIP    %s: a document with this name already exists (ids %s)"
+                      % (path.name, ", ".join(str(d.id) for d in same_name)))
+                print("          Its content differs from the committed file, so seeding")
+                print("          would add a second copy rather than update it.")
+                print("          Re-run with --replace to rebuild this tenant's corpus.")
+                skipped += 1
+                continue
+
             if args.dry_run:
                 print("  would seed %s" % path.name)
                 seeded += 1
