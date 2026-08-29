@@ -68,6 +68,8 @@ def main() -> int:
     # Set before importing app.config, which reads it at import time.
     os.environ["DATABASE_URL"] = args.url
 
+    from sqlalchemy import text as sa_text
+
     from app.config import settings
     from app.db.session import SessionLocal
     from app.repositories.chunks import delete_by_tenant as delete_chunks_by_tenant
@@ -101,6 +103,17 @@ def main() -> int:
         print("No .txt/.pdf/.docx files in %s" % DEMO_CORPUS_DIR, file=sys.stderr)
         return 1
 
+    # Say out loud which database is about to be written to, with the
+    # password stripped. This script is meant to be pointed at production,
+    # and the failure that matters is not a crash: it is seeding the wrong
+    # database and believing the right one was updated. A local .env is
+    # always present on a dev machine, so "did --url actually take effect"
+    # is a real question, and the answer belongs on screen.
+    target = settings.database_url
+    if "@" in target:
+        scheme, _, rest = target.partition("://")
+        target = "%s://<credentials>@%s" % (scheme, rest.partition("@")[2])
+    print("target:  %s" % target)
     print("corpus:  %s (%d file(s))" % (DEMO_CORPUS_DIR, len(corpus_files)))
     print("tenant:  %r" % tenant_name)
     if args.dry_run:
@@ -108,6 +121,25 @@ def main() -> int:
 
     db = SessionLocal()
     try:
+        # Fail with something readable rather than a SQLAlchemy traceback
+        # when the target is reachable but has no schema, which is what an
+        # un-migrated or freshly created database looks like.
+        try:
+            db.execute(sa_text("SELECT 1 FROM tenants LIMIT 1"))
+        except Exception as exc:
+            db.rollback()
+            message = str(exc).lower()
+            if "does not exist" in message or "undefinedtable" in message:
+                print("\nThe target database has no schema. Run migrations first:",
+                      file=sys.stderr)
+                print('  alembic upgrade head    (with DATABASE_URL set to this target)',
+                      file=sys.stderr)
+            else:
+                print("\nCould not reach the target database: %s" % type(exc).__name__,
+                      file=sys.stderr)
+                print("  %s" % str(exc).splitlines()[0][:200], file=sys.stderr)
+            return 2
+
         tenant = get_by_name(db, tenant_name)
         if tenant is None:
             print("tenant %r does not exist, will create" % tenant_name)
