@@ -114,6 +114,12 @@ class Settings(BaseSettings):
     # was - invalidation on document change is what keeps this safe even if
     # the TTL is generous.
     cache_ttl_seconds: int = 300
+    # Hard ceiling on cached answers, since TTL alone never bounded this: an
+    # entry was only removed when someone read it after it expired, so
+    # one-off questions stayed resident and scope-invalidated entries became
+    # unreachable and therefore immortal. Each entry holds an answer and its
+    # source chunks, so on a 512MB instance this is real memory.
+    cache_max_entries: int = 1000
 
     # Comma-separated allowlist for CORSMiddleware, not a JSON list - Render's
     # env var UI is plain text fields, so this stays copy-pasteable there.

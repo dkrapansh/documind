@@ -34,8 +34,38 @@ class _CacheEntry:
 # so concurrent requests can hit these together; a plain dict's
 # check-then-set isn't atomic.
 _lock = threading.Lock()
+# Insertion-ordered, and relied upon: eviction pops the oldest entry, which
+# for a plain dict is the one inserted longest ago.
 _entries: dict[tuple[int, str, int], _CacheEntry] = {}
 _scope_versions: dict[int, int] = {}
+
+
+def _evict_locked() -> None:
+    """Keep the cache bounded. Caller must hold _lock.
+
+    Entries only ever left this cache by being read after they expired, so a
+    question asked once and never repeated stayed resident for its full TTL,
+    and one asked once per tenant across many tenants stayed forever in
+    aggregate. On a 512MB instance that is a slow leak of whole answers and
+    their source chunks, and bump_scope makes it worse rather than better:
+    invalidated entries become unreachable under a stale scope version, so
+    nothing ever reads them again and nothing ever removes them.
+
+    Expired entries go first, since they are free. Only if that is not enough
+    does it evict live ones, oldest-inserted first. That is not true LRU, it
+    is FIFO: reads do not refresh position. Real LRU would need reordering on
+    every read, and for an exact-match cache in front of a pipeline this
+    expensive, the difference is not worth the extra work per request.
+    """
+    if len(_entries) <= settings.cache_max_entries:
+        return
+
+    now = time.monotonic()
+    for key in [k for k, v in _entries.items() if v.expires_at < now]:
+        del _entries[key]
+
+    while len(_entries) > settings.cache_max_entries:
+        _entries.pop(next(iter(_entries)))
 
 
 def _make_key(tenant_id: int, question: str) -> tuple[int, str, int]:
@@ -77,6 +107,7 @@ def set_cached_answer(
     )
     with _lock:
         _entries[key] = entry
+        _evict_locked()
 
 
 def bump_scope(tenant_id: int) -> None:
