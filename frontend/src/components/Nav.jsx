@@ -61,7 +61,10 @@ export function Nav() {
         Docu<span>Mind</span>
       </a>
       <div className="nav-right">
-        <div className="navmeta mono">RAG API · v1.0 · live</div>
+        {/* No version here on purpose. This was the one version string in the
+            project not derived from APP_VERSION, and it drifted to v1.0 while the
+            service reported 0.1.0. The live version is served by /health/live. */}
+        <div className="navmeta mono">RAG API · live</div>
         <a className="navmeta mono nav-demo-link" href="#demo" onClick={scrollToDemo}>
           demo
         </a>

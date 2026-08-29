@@ -21,11 +21,11 @@ import "./Demo.css";
 // the golden dataset refuse here, including the answerable ones. That mistake
 // was made once already and shipped a demo whose flagship question refused.
 //
-// The real gap this depends on: the demo corpus exists only as rows in the
-// production database, uploaded by hand and never committed, and there is no
-// seed script. A fresh deploy has an empty demo tenant and both presets refuse.
-// Committing the handbook plus a seed script is what would make these presets
-// hold on any deploy rather than only on this one.
+// These presets hold on any deploy, not just this one: the corpus is committed
+// at eval/demo_corpus/ and scripts/seed_demo_corpus.py reproduces it into the
+// demo tenant idempotently. Before that existed, the corpus lived only as rows
+// in the production database, so a fresh deploy had an empty demo and both
+// presets refused.
 const PRESETS = {
   answerable: "How many vacation days do new full-time employees get?",
   refuse: "What was Northwind's total revenue in 2019?",
@@ -294,8 +294,14 @@ export function Demo() {
             <div className="out">
               {refused ? (
                 <div className="out-refuse">
+                  {/* Render what the API actually returned. This used to hardcode a
+                      second, different refusal sentence, so the page showed wording the
+                      backend never sends. answering.py pins REFUSAL_ANSWER precisely
+                      because three consumers key off it, and this was the one that
+                      drifted. The fallback covers the empty-corpus case, where the
+                      refusal is decided before any answer is streamed. */}
                   <div className="r-main">
-                    I can&apos;t answer that confidently from the provided documents.
+                    {answer || "I don't have enough relevant information in the uploaded documents to answer that question confidently."}
                   </div>
                   <div className="r-meta">
                     the model read the retrieved context and found no answer in it
@@ -371,7 +377,7 @@ function DocChip({ doc, loading }) {
 }
 
 function PipelineSteps({ lit, finalStep }) {
-  const steps = [...BASE_STEPS, finalStep?.label ?? "score check"];
+  const steps = [...BASE_STEPS, finalStep?.label ?? "reranking"];
   return (
     <div className="pipe">
       {steps.map((label, i) => {
