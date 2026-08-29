@@ -33,8 +33,10 @@ curl -X POST https://documind-oyhv.onrender.com/query \
   filters by `tenant_id` inside the database call itself.
 - **Retrieval combines two methods**: dense embeddings and keyword search
   (BM25), instead of trusting one.
-- **The system refuses to answer** when it isn't confident, instead of
-  letting the model guess.
+- **The system refuses to answer** when the documents do not contain the
+  answer, instead of guessing. That decision is made by the model reading the
+  retrieved text, after a score threshold was measured to be doing it badly
+  in both directions.
 - **Quality is measured offline** with a real RAGAS evaluation harness,
   not by eyeballing a few examples.
 
@@ -107,7 +109,7 @@ documind/
 │   ├── run_eval.py                  # CLI entry point for an offline eval run
 │   └── RESULTS.md                   # eval history and threshold-tuning notes
 ├── scripts/                            # container entrypoint, DB connectivity check
-├── tests/                             # 20 files, 103 tests, real Postgres
+├── tests/                             # 21 files, 116 tests, real Postgres
 ├── frontend/                           # React + Vite landing page and demo
 │   ├── src/                             # components, scroll animation, api client
 │   └── api/                             # Vercel proxy: session cookie, no client-side key
@@ -301,93 +303,106 @@ Full breakdown, including why context precision sits at 0.73, is in
 
 ## Security and reliability
 
-- **The public demo used to share one API key** across every visitor.
-  Since retrieval is scoped by tenant, that meant one shared tenant, so
-  any visitor could see any other visitor's uploads. Fixed with a
-  same-origin proxy that mints a fresh, isolated tenant per visitor and
-  keeps the key in an httpOnly cookie the browser never sees.
-- **The demo-session endpoint is rate-limited by IP**, and that IP has
-  to come from a header the proxy sets, checked against a secret only
-  the proxy knows. Without that check, a caller could forge a fresh IP
-  on every request and dodge the limit. The proxy itself used to trust
-  the wrong end of that header; it now trusts the end a caller can't
-  forge.
-- **A hard cap limits how many demo tenants can exist at once**, on top
-  of the per-IP limit, since each one copies the sample corpus and an
-  unbounded number of visitors means unbounded storage growth.
-- **`POST /auth/keys` is now rate-limited and length-bounded** too. It
-  has no key to check yet, same as the demo endpoint, so nothing else
-  stopped a script from minting unlimited tenants for free.
-- **`POST /eval/runs` is closed to demo tenants.** It ingests the
-  golden corpus and calls the model for real, and demo tenants are
-  free to create, so leaving it open would let anyone burn through the
-  quota.
-- **A generation failure returns a clean 503** and is still logged,
-  instead of an unhandled error that left no trace. The streaming
-  endpoint got the same fix: a failure partway through now sends an
-  explicit error event instead of just cutting off.
-- **Ephemeral tenants are swept on every boot**, on top of the sweep
-  that already runs on new demo traffic, since Render has no cron job
-  and an idle instance would otherwise never clean up.
-- **Every error has a stable code and a correlation id.** Anything that was
-  not an expected application error used to return an empty 500 with nothing
-  logged by the application, so the only evidence it happened was a platform
-  access log line. Errors now carry a machine-readable `code` (clients that
-  branch on prose break the moment the wording improves) and the same
-  correlation id that appears on the server's log records for that request.
-  The message stays generic on unhandled errors, since exception text can
-  contain a connection string or a row of user data.
-- **The reranker load is bounded and its failure is retryable.** The model
-  loads on first use, which on a cold instance means a download from a CDN
-  this service does not control. That happened inside a user's request with
-  no timeout and surfaced as a 500. It now returns a 503 the caller can
-  retry, one thread loads while others wait rather than each starting its own
-  download, and a failed load is not cached, so a transient CDN outage does
-  not last until the next deploy.
-- **A second concurrent evaluation run is refused.** Each run is minutes of
-  real model calls against a shared free-tier quota. Two at once do not
-  merely cost twice as much: they exhaust the per-minute quota and both
-  record null scores.
-- **The query cache is bounded.** TTL alone never bounded it, since an entry
-  was only removed when someone read it after expiry. A question asked once
-  stayed resident, and entries invalidated by a document change became
-  unreachable and therefore permanent.
-- **Tenant-scoped columns are indexed.** Every query filters on `tenant_id`
-  inside the SQL, and none of those columns had an index, so each filter was
-  a sequential scan. The worst was on the hot path: BM25 reads every chunk
-  belonging to a tenant on every question.
-- **Ingestion is a durable job, not an in-memory task.** It used to run in a
-  FastAPI `BackgroundTask`, so a process death mid-job left the document at
-  `processing` forever with nothing recording that the work had started.
-  Jobs now live in Postgres and are claimed under a lease, so a crashed
-  worker's job is reclaimed rather than lost. See "How ingestion works" above.
+Grouped by what each one protects against. Every item below is a fix for a
+specific failure this project actually hit or an audit found, not a checklist
+copied from somewhere.
+
+### Staying up, and explaining itself when it is not
+
 - **A failed migration used to take the whole service down.** The container
-  started with `alembic upgrade head && uvicorn ...`, so any database
-  problem made Alembic exit non-zero, uvicorn never bound a port, and the
-  container died. Nothing survived to report why, since the health endpoint
-  cannot answer when the process serving it never started. Migrations still
-  run and still fail loudly, but the API now starts regardless, and
-  `/health/ready` reports which dependency is broken.
+  started with `alembic upgrade head && uvicorn ...`, so any database problem
+  made Alembic exit non-zero, uvicorn never bound a port, and the container
+  died. Nothing survived to report why, since a health endpoint cannot answer
+  when the process serving it never started. Migrations still run and still
+  fail loudly, but the API now starts regardless and `/health/ready` reports
+  which dependency is broken. This is the failure that took the deployment
+  down, and the fix is confirmed working in production.
 - **Liveness and readiness are separate endpoints.** Liveness touches no
   dependency, so a database outage cannot fail the platform health check and
-  get every replacement instance restarted into the same failure. Readiness
-  reports version, git SHA, and per-dependency status, and it compares the
-  database's schema revision against the running build so a half-deployed
-  instance fails readiness instead of quietly erroring on missing columns.
-- **Logs are structured and carry a correlation ID.** Nothing configured
-  logging before, so under uvicorn the root logger stayed at WARNING and
-  every application log line was silently discarded. Redaction happens in the
+  restart every replacement instance into the same failure. Readiness reports
+  version, git SHA, and per-dependency status, and compares the database's
+  schema revision against the running build, so a half-deployed instance
+  fails readiness instead of quietly erroring on missing columns.
+- **Ingestion is a durable job, not an in-memory task.** It ran in a FastAPI
+  `BackgroundTask`, which exists only inside the running process, so a
+  process death mid-job left a document at `processing` forever with nothing
+  recording that the work had started. Jobs now live in Postgres under a
+  lease. See "How ingestion works" for why a lease rather than a lock.
+- **The reranker load is bounded and its failure is retryable.** The model
+  loads on first use, which on a cold instance means a download from a CDN
+  this service does not control, inside a user's request. That surfaced as a
+  500. It now returns a 503 the caller can retry, one thread loads while
+  others wait rather than each starting its own download, and a failed load
+  is not cached, so a transient outage does not persist until the next deploy.
+- **A generation failure returns a clean 503** and is still logged. The
+  streaming endpoint sends an explicit error event rather than cutting off
+  mid-answer with no signal.
+
+### Being diagnosable
+
+- **Logs are structured and carry a correlation id.** Nothing configured
+  logging at all, so under uvicorn the root logger sat at WARNING and every
+  application log line was silently discarded. Redaction happens in the
   formatter rather than at each call site, so a new log statement cannot leak
   a credential by forgetting to strip it.
+- **Every error has a stable code and a correlation id**, and the same shape
+  whether it came from a route or from middleware. Unhandled exceptions used
+  to return an empty 500 with nothing logged by the application, so the only
+  evidence was a platform access log line. Clients branch on `code`, since
+  matching on prose breaks the moment the wording improves. The message stays
+  generic on a 500, because exception text can contain a connection string or
+  a row of user data.
+
+### Bounding cost and memory
+
+The deployment target has 512MB of RAM and the model quota is a free tier, so
+every unbounded thing here is a real limit, not a theoretical one.
+
 - **The database pool is bounded and every connection has timeouts.** Each
   in-flight request briefly holds two connections, not one, since the auth
   middleware opens its own session for the API key lookup before the route's
   session opens. A statement timeout keeps one wedged query from pinning a
   connection, and therefore a request thread, indefinitely.
-- **The reranker used to be a PyTorch model** that cost about 555MB of
-  memory to load, over Render's free tier limit. Swapped for
-  `flashrank`, an ONNX version of the same kind of model, which costs
-  about 120MB.
+- **Uploads are capped at 20MB and at 400 chunks.** The byte cap bounds size;
+  the chunk cap bounds work, since each chunk is a separate paid embedding
+  call and a large text file could otherwise consume a day of quota.
+- **The query cache is bounded.** TTL alone never bounded it, since an entry
+  was only removed when someone read it after expiry. A question asked once
+  stayed resident, and entries invalidated by a document change became
+  unreachable and therefore permanent.
+- **A second concurrent evaluation run is refused.** Each run is minutes of
+  real model calls. Two at once do not merely cost twice as much: they
+  exhaust the per-minute quota and both record null scores.
+- **Tenant-scoped columns are indexed.** Every query filters on `tenant_id`
+  inside the SQL and none of those columns had an index, so each filter was a
+  sequential scan. The worst was on the hot path: BM25 reads every chunk
+  belonging to a tenant on every question.
+- **The reranker used to be a PyTorch model** costing about 555MB to load,
+  over the memory limit by itself. Swapped for `flashrank`, an ONNX build of
+  the same class of model, at about 120MB.
+
+### Tenant isolation and abuse
+
+- **The public demo used to share one API key** across every visitor. Since
+  retrieval is scoped by tenant, that meant one shared tenant, so any visitor
+  could read any other visitor's uploads. Fixed with a same-origin proxy that
+  mints a fresh, isolated tenant per visitor and keeps the key in an httpOnly
+  cookie the browser never sees.
+- **The demo-session endpoint is rate-limited by IP**, and that IP has to
+  come from a header the proxy sets, checked against a secret only the proxy
+  knows. Without that check a caller could forge a fresh IP per request. The
+  proxy itself used to trust the wrong end of that header; it now trusts the
+  end a caller cannot forge.
+- **A hard cap limits how many demo tenants exist at once**, on top of the
+  per-IP limit, since each one copies the sample corpus.
+- **`POST /auth/keys` is rate-limited and length-bounded.** It has no key to
+  check yet, by definition, so nothing else stopped a script minting
+  unlimited tenants.
+- **`POST /eval/runs` is closed to demo tenants**, which are free to create
+  and would otherwise let anyone burn the quota.
+- **Ephemeral tenants are swept on every boot**, on top of the sweep that
+  runs on new demo traffic, since the platform has no cron and an idle
+  instance would never clean up.
 
 ## Tech stack
 
@@ -454,7 +469,7 @@ without it.
 pytest -m "not live_api"
 ```
 
-103 tests, run against a real Postgres instance with the schema built by
+116 tests, run against a real Postgres instance with the schema built by
 the actual `alembic upgrade head` chain, not a shortcut that only checks
 today's model definitions. They cover multi-tenant isolation, the full
 retrieval funnel, ingestion, caching, rate limiting, the refusal path,
@@ -471,9 +486,10 @@ excluded from CI since it costs real quota and isn't deterministic.
   library has no persistent index. Fine at this scale; at real scale
   this would move into Postgres itself with a `tsvector` column and a
   GIN index.
-- The reranker's model downloads on first use instead of shipping
-  inside the Docker image, to keep the image small and cold starts
-  light.
+- The reranker's model downloads on first use rather than shipping inside
+  the Docker image, to keep the image small. The first request after a cold
+  start pays for that download; it is bounded and returns a retryable 503 on
+  failure, but it is still latency a warm instance does not have.
 - There's no per-document filter on queries. Every query searches a
   tenant's whole corpus. That's a deliberate choice, not an oversight.
 - The vector index is shared across all tenants instead of split per
