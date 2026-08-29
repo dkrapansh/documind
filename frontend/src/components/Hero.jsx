@@ -18,16 +18,20 @@ function splitToChars(text, keyPrefix) {
   });
 }
 
+// Illustrative, not live output. The demo further down the page is the real
+// thing. These labels once read "chunk 18" and "chunk 19" of a handbook that is
+// a single chunk, which was indistinguishable from the live demo's own
+// "doc N - chunk N" labels rendered in the same style.
 const TRACE_SOURCES = [
   {
     id: "c1",
-    label: "handbook · chunk 18",
+    label: "handbook · excerpt",
     score: "0.88",
     text: "…full-time staff accrue vacation at 1.25 days per month, totaling 15 days annually in year one…",
   },
   {
     id: "c2",
-    label: "handbook · chunk 19",
+    label: "handbook · excerpt",
     score: "0.81",
     text: "…after three years of continuous service the annual allotment increases to 20 days…",
   },
@@ -100,6 +104,7 @@ export function Hero() {
         </div>
 
         <div className="trace-card reveal">
+          <div className="trace-note mono">illustration &middot; try the live demo below</div>
           <div className="trace-answer">
             <div className="tlabel mono">Answer</div>
             <div className="answer-txt">

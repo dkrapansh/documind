@@ -5,7 +5,7 @@ import { useCountUp } from "../hooks/useCountUp";
 import "./Funnel.css";
 
 const STAGES = [
-  { key: "01 · retrieve", count: 20, desc: "dense (pgvector) + BM25, top 10 each", dots: 20 },
+  { key: "01 · retrieve", count: 20, desc: "dense (pgvector) + BM25, top 10 each, up to 20", dots: 20 },
   { key: "02 · fuse", count: 10, desc: "Reciprocal Rank Fusion by position, capped at 10", dots: 10 },
   { key: "03 · rerank", count: 4, desc: "cross-encoder reads query + chunk together", dots: 4 },
   { key: "04 · judge", count: null, desc: "model reads the context: answer, or refuse", dots: 1, staticValue: "LLM" },
@@ -93,7 +93,7 @@ export function Funnel() {
 
         <div className="band">
           <div className="band-in">
-            <BandStat value={555} end2={120} cap="The reranker was rewritten from PyTorch to ONNX after it OOM'd on a 512MB host: same model class, one-fifth the memory." />
+            <BandStat value={555} end2={120} cap="Loading the PyTorch reranker measured 555MB in a clean process, over the 512MB host limit. Rewritten to ONNX: same model class, one-fifth the memory." />
             <BandStatSimple value={8} of={8} cap="All 8 unanswerable questions in the golden dataset are refused. The model reads the retrieved context and says so, rather than a score threshold guessing from similarity alone." />
           </div>
         </div>

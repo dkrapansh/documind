@@ -48,16 +48,19 @@ export function Refusal() {
             refusal sentence when they do not contain the answer. Refusing is a decision made
             after reading the text, not a score compared against a cutoff.
           </p>
+          {/* The widths are illustrative of two outcomes, not scores. They used to be
+              88 and 41, which bracketed the retired 0.70 gate's measured separation,
+              so this section argued against score-based refusal while drawing one. */}
           <div className="gauge reveal">
             <div className="gauge-title">In the documents</div>
-            <GaugeBar width={88} />
+            <GaugeBar width={92} />
             <div className="gauge-cap">
               <span className="verdict ok mono">answered, with sources cited</span>
             </div>
             <div className="gauge-title" style={{ marginTop: 26 }}>
               Not in the documents
             </div>
-            <GaugeBar width={41} low />
+            <GaugeBar width={22} low />
             <div className="gauge-cap">
               <span className="verdict no mono">refused, no sources shown</span>
             </div>
