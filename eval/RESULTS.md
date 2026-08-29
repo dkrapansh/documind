@@ -299,9 +299,16 @@ question. The wording is pinned so refusals stay machine-detectable, which
 this harness depends on. An empty retrieval result still refuses without a
 model call, but that now only happens when the tenant has no documents.
 
-**Measured effect**, real reranker and real Gemini, same nine questions:
-4/9 correct before, 9/9 after. All six false refusals answer correctly; all
-three genuine refusals still refuse.
+**Measured effect**, real reranker and real Gemini, on a nine-question set:
+**4/9 correct before, 9/9 after.**
+
+Note that this is a different nine questions from the score table above, which
+is why the counts do not line up between them. The end-to-end set is six
+questions the document answers and three it does not. Under the old gate, one
+of the six was answered and five were falsely refused, and all three genuine
+refusals were correct, giving 4/9. With the gate removed all nine are correct:
+the five false refusals now answer, and the three genuine refusals still
+refuse.
 
 **Costs, stated honestly.** A question that ends in a refusal now pays for a
 model call the gate used to avoid. Refusal is no longer deterministic: it

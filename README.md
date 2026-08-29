@@ -106,9 +106,10 @@ documind/
 ├── eval/
 │   ├── golden_corpus/               # 10 fictional source documents
 │   ├── golden_dataset.json          # 41 question/answer/category items (v3)
+│   ├── demo_corpus/                 # the corpus the public demo answers from
 │   ├── run_eval.py                  # CLI entry point for an offline eval run
 │   └── RESULTS.md                   # eval history and threshold-tuning notes
-├── scripts/                            # container entrypoint, DB connectivity check
+├── scripts/                            # entrypoint, DB check, demo corpus seeding
 ├── tests/                             # 21 files, 116 tests, real Postgres
 ├── frontend/                           # React + Vite landing page and demo
 │   ├── src/                             # components, scroll animation, api client
@@ -239,7 +240,7 @@ answering code, not a copy of it, and scores the results with RAGAS.
 | Context precision | 0.79 | 0.73 | 0.73 |
 | Refusal accuracy | 6/6 (100%) | 6/8 (75%) | 8/8 (100%) |
 
-The last column is the system as it runs today (eval run 10). Removing the
+The last column is the system as it runs today (eval run 11). Removing the
 score gate improved refusal accuracy and answer relevancy and left
 faithfulness and context precision unchanged.
 
@@ -260,11 +261,10 @@ Measured against an uploaded job description:
 | Does this role require Kubernetes? | 0.013 | refuse | yes, "Deep experience with Kubernetes" |
 | what is the salary | 0.000 | refuse | no, correctly refused |
 
-Questions the document answers outright scored 0.001 to 0.13, while questions
-it genuinely could not answer scored 0.000. No threshold separates those, so
-lowering it would not have helped, and re-chunking the document did not help
-either. The number was fitted to a sample that did not represent the traffic
-it gated.
+Answerable questions span 0.001 to 0.981; genuinely unanswerable ones sit at
+0.000. There is no cut point between them, so lowering the threshold would not
+have helped, and re-chunking the document did not help either. The number was
+fitted to a sample that did not represent the traffic it gated.
 
 The refusal decision moved to the model, which reads the text instead of
 scoring a similarity. On the same nine questions the system went from 4 of 9
@@ -433,11 +433,13 @@ every unbounded thing here is a real limit, not a theoretical one.
 | `GET /history/{session_id}` | Prior questions and answers in a session |
 | `POST /eval/runs` | Kick off an offline RAGAS evaluation run |
 | `GET /eval/runs/{id}` | Read back a completed evaluation run's scores |
+| `GET /health` | Legacy liveness alias, kept so older probes keep working |
 | `GET /health/live` | Liveness: the process is serving HTTP. Touches no dependency |
 | `GET /health/ready` | Readiness: version, git SHA, and per-dependency status. 503 if unready |
 
-Every endpoint except `/auth/keys`, `/auth/demo-session`, `/auth/google`,
-and the `/health` endpoints requires an `X-API-Key` header. `/auth/google` is an
+Every endpoint requires an `X-API-Key` header except `/auth/keys`,
+`/auth/demo-session`, `/auth/google`, the `/health` endpoints, and the
+generated API docs at `/docs`, `/openapi.json` and `/redoc`. `/auth/google` is an
 alternate way to get one of those keys, not a replacement for the
 header itself: a caller who signs in with Google still gets back a
 normal API key and uses it exactly like any other tenant. A repeat
