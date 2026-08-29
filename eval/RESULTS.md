@@ -255,3 +255,64 @@ original five-example manual probe.
   confirmed, not re-derived, by the real pipeline run (eval run 8, which
   used 0.7 directly rather than sweeping multiple candidate thresholds
   through the expensive real pipeline).
+
+## Confidence threshold removed (2026-08-28)
+
+The reranker score is no longer an absolute gate on whether to answer. It
+still orders candidates; the refusal decision moved to the model.
+
+**Why.** The threshold was tuned twice against this golden dataset (-6.0 to
+-3.0 on the old CrossEncoder logit scale, then 0.70 after the flashrank swap
+moved scores into [0, 1]) and looked cleanly separated: every answerable item
+scored >= 0.909, every expected_refusal item <= 0.405.
+
+That separation did not survive contact with a real document. The golden
+questions were written from the corpus and share its phrasing; real questions
+do not. Scored against an uploaded job description with the real reranker:
+
+| Question | Score | Old verdict | Present in the document? |
+| --- | --- | --- | --- |
+| What skills does apple want for this role? | 0.981 | answer | yes |
+| What are the key qualifications for this role? | 0.787 | answer | yes |
+| what skills do they want | 0.124 | refuse | yes |
+| what do i need for this job | 0.133 | refuse | yes |
+| How many years of experience are required? | 0.041 | refuse | yes, "5+ years" |
+| Does this role require Kubernetes? | 0.013 | refuse | yes, "Deep experience with Kubernetes" |
+| What programming languages are required? | 0.001 | refuse | yes, "Python, Go, or Java" |
+| what is the salary | 0.000 | refuse | no |
+| who is the hiring manager | 0.000 | refuse | no |
+
+Answerable questions span 0.001 to 0.981; genuinely unanswerable ones sit at
+0.000. There is no cut point between them, so retuning the number could not
+fix this. Splitting the document into its natural sections was also tried and
+did not fix it: "Does this role require Kubernetes?" only moved from 0.013 to
+0.041 against the section that contains the word Kubernetes.
+
+The lesson worth keeping: a threshold validated only against a dataset whose
+questions were authored from the corpus is validated against its own
+assumptions. The 0.909/0.405 gap was measuring phrasing overlap, not
+relevance.
+
+**What replaced it.** services/answering.py instructs the model to reply with
+the exact REFUSAL_ANSWER sentence when the context does not answer the
+question. The wording is pinned so refusals stay machine-detectable, which
+this harness depends on. An empty retrieval result still refuses without a
+model call, but that now only happens when the tenant has no documents.
+
+**Measured effect**, real reranker and real Gemini, same nine questions:
+4/9 correct before, 9/9 after. All six false refusals answer correctly; all
+three genuine refusals still refuse.
+
+**Costs, stated honestly.** A question that ends in a refusal now pays for a
+model call the gate used to avoid. Refusal is no longer deterministic: it
+depends on the model following an instruction rather than on an arithmetic
+comparison. `settings.confidence_threshold` is retained, defaulting to None,
+so this harness can still sweep values and reproduce the old behavior for
+comparison.
+
+**Not yet re-run against the golden dataset.** The numbers above are from the
+job-description probe, not a full harness run. A v3 run under the new
+behavior is the outstanding measurement, and the expected direction is that
+the two near-miss items (gd-038, gd-039) improve, since they were refusal
+misses caused by the gate letting through high-lexical-overlap questions the
+model then answered correctly anyway.

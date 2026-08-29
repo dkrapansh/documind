@@ -127,9 +127,9 @@ flowchart LR
     Dense --> RRF["Reciprocal Rank Fusion"]
     BM25 --> RRF
     RRF --> Rerank["Cross-encoder rerank, top 4"]
-    Rerank --> Threshold{"Best score >= 0.7?"}
-    Threshold -- no --> Refuse["Refuse, no LLM call"]
-    Threshold -- yes --> LLM["Gemini generates grounded answer"]
+    Rerank --> Any{"Any candidates?"}
+    Any -- no --> Refuse["Refuse, no LLM call"]
+    Any -- yes --> LLM["Gemini reads the context:<br/>answers, or refuses in fixed wording"]
     LLM --> Store["Cache + log the result"]
     Refuse --> Store
     Store --> Return
@@ -143,9 +143,10 @@ scale.
 
 The fused results go through a real cross-encoder rerank, too slow for a
 whole corpus but cheap for the handful of candidates RRF narrows things
-down to. If the best result still scores below the confidence threshold,
-the system refuses before calling the model, so a refusal costs nothing
-beyond retrieval. The system prompt also tells the model to treat
+down to. The reranker orders candidates; it does not decide whether to
+answer. That decision belongs to the model, which reads the text rather
+than scoring a similarity, and replies with a fixed refusal sentence when
+the context genuinely does not answer the question. The system prompt also tells the model to treat
 retrieved text as data, never as instructions, so a document that says
 "ignore previous instructions" can't hijack the response.
 
@@ -236,10 +237,35 @@ answering code, not a copy of it, and scores the results with RAGAS.
 | Context precision | 0.79 | 0.73 |
 | Refusal accuracy | 6/6 (100%) | 6/8 (75%) |
 
-The confidence threshold came from measured data, not a guess: an
-earlier value refused 3 of 6 genuinely unanswerable questions, and
-retuning it brought that to 6 of 6 with no change to the 24 answerable
-ones. Full history is in [`eval/RESULTS.md`](eval/RESULTS.md).
+**The confidence threshold was removed, and finding out why is the most
+useful thing this evaluation did.** It gated every answer: below 0.70, the
+API refused without calling the model. It had been tuned twice against
+measured data and looked well separated, since every answerable golden item
+scored 0.909 or above and every refusal item 0.405 or below.
+
+That separation was an artifact of the dataset. The golden questions were
+written *from* the corpus, so they share its phrasing. Real questions do not.
+Measured against an uploaded job description:
+
+| Question | Score | Old verdict | In the document? |
+| --- | --- | --- | --- |
+| What skills does apple want for this role? | 0.981 | answer | yes |
+| What programming languages are required? | 0.001 | refuse | yes, "Python, Go, or Java" |
+| Does this role require Kubernetes? | 0.013 | refuse | yes, "Deep experience with Kubernetes" |
+| what is the salary | 0.000 | refuse | no, correctly refused |
+
+Questions the document answers outright scored 0.001 to 0.13, while questions
+it genuinely could not answer scored 0.000. No threshold separates those, so
+lowering it would not have helped, and re-chunking the document did not help
+either. The number was fitted to a sample that did not represent the traffic
+it gated.
+
+The refusal decision moved to the model, which reads the text instead of
+scoring a similarity. On the same nine questions the system went from 4 of 9
+correct to 9 of 9. The costs are real and worth stating: a question that ends
+in a refusal now pays for a model call that the gate used to avoid, and
+refusal is no longer deterministic. Full history is in
+[`eval/RESULTS.md`](eval/RESULTS.md).
 
 v2's perfect faithfulness score was real but easy to over-read. Every
 v2 answer was close to a verbatim copy of one sentence, and every
