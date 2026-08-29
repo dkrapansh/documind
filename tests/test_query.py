@@ -325,3 +325,68 @@ def test_query_generation_failure_is_not_cached(client, monkeypatch):
     )
     assert second.status_code == 200
     assert second.json()["answer"] == "Refunds are available within 30 days of purchase."
+
+
+def test_model_refusal_clears_sources_so_a_refusal_is_never_shown_with_citations(
+    client, db_session, monkeypatch
+):
+    """The refusal decision moved from a reranker score threshold to the
+    model, which reads the actual text (see services/reranking.py).
+
+    When it refuses, the retrieved chunks must not travel back as sources:
+    they were candidates the model judged insufficient, and returning them
+    would cite documents as support for an answer that was never given.
+    """
+    from app.services.answering import REFUSAL_ANSWER
+
+    monkeypatch.setattr("app.services.ingestion.embed_text", _fake_embed_text)
+    monkeypatch.setattr("app.services.retrieval.embed_text", _fake_embed_text)
+    # The model refuses even though retrieval returned candidates.
+    monkeypatch.setattr("app.services.answering.generate_answer", lambda messages: REFUSAL_ANSWER)
+
+    headers = _auth_headers(client)
+    client.post(
+        "/documents",
+        headers=headers,
+        files={"file": ("doc.txt", io.BytesIO(b"Some indexed content about office hours."), "text/plain")},
+    )
+    drain_ingestion()
+
+    body = client.post("/query", headers=headers, json={"question": "unrelated question"}).json()
+
+    assert body["answer"] == REFUSAL_ANSWER
+    assert body["sources"] == [], "a refusal must not be returned with citations"
+
+
+def test_a_weakly_matching_chunk_still_reaches_the_model(client, db_session, monkeypatch):
+    """The regression this whole change exists to prevent: a question the
+    document answers, phrased differently from the document, used to be
+    refused before the model ever saw the text because the reranker scored
+    it below the threshold. It must now reach the model."""
+    seen = {}
+
+    def _capture(messages):
+        seen["context"] = messages[-1]["content"]
+        return "Python, Go, or Java."
+
+    monkeypatch.setattr("app.services.ingestion.embed_text", _fake_embed_text)
+    monkeypatch.setattr("app.services.retrieval.embed_text", _fake_embed_text)
+    monkeypatch.setattr("app.services.answering.generate_answer", _capture)
+
+    headers = _auth_headers(client)
+    client.post(
+        "/documents",
+        headers=headers,
+        files={"file": ("jd.txt", io.BytesIO(
+            b"Key Qualifications: Strong programming skills in Python, Go, or Java."
+        ), "text/plain")},
+    )
+    drain_ingestion()
+
+    body = client.post(
+        "/query", headers=headers, json={"question": "what languages do i need"}
+    ).json()
+
+    assert "context" in seen, "the model was never called: the old score gate refused first"
+    assert "Python, Go, or Java" in seen["context"]
+    assert body["sources"], "an answered question should carry its sources"

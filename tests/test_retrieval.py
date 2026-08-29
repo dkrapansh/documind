@@ -154,8 +154,30 @@ def test_retrieve_ranked_refuses_when_no_chunk_is_actually_relevant(client, db_s
 
     monkeypatch.setattr("app.services.retrieval.embed_text", lambda q: _make_embedding(0))
 
-    results = retrieve_ranked(
-        db_session, tenant_id, "What is the refund policy for defective electronics?"
-    )
+    question = "What is the refund policy for defective electronics?"
 
-    assert results == []
+    # The reranker no longer decides whether to answer. A weakly matching
+    # chunk is still returned, ranked, and the refusal decision belongs to
+    # the model, which reads the text (see services/reranking.py for the
+    # measurements behind that change).
+    results = retrieve_ranked(db_session, tenant_id, question)
+    assert len(results) == 1
+    assert results[0].text == "The office is closed on public holidays."
+    # The score is still recorded, for observability and eval, just not used
+    # as a gate.
+    assert results[0].confidence is not None
+
+    # The floor is retained as an explicit opt-in so the eval harness can
+    # sweep thresholds and reproduce the old behavior for comparison.
+    assert retrieve_ranked(db_session, tenant_id, question, confidence_threshold=0.7) == []
+
+
+def test_retrieve_ranked_refuses_when_the_tenant_has_no_documents(client, db_session, monkeypatch):
+    """The one refusal still made without calling the model: retrieval
+    genuinely found nothing, so there is no context to judge."""
+    issue_response = client.post("/auth/keys", json={"tenant_name": "empty-tenant"})
+    tenant_id = issue_response.json()["tenant_id"]
+
+    monkeypatch.setattr("app.services.retrieval.embed_text", lambda q: _make_embedding(0))
+
+    assert retrieve_ranked(db_session, tenant_id, "anything at all") == []
