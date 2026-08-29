@@ -5,7 +5,7 @@ import "./Footer.css";
 
 const STATS = [
   { value: 0.99, label: "Faithfulness" },
-  { value: 0.78, label: "Answer relevancy" },
+  { value: 0.82, label: "Answer relevancy" },
   { value: 0.73, label: "Context precision" },
 ];
 
