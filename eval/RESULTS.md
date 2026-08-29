@@ -310,9 +310,38 @@ comparison. `settings.confidence_threshold` is retained, defaulting to None,
 so this harness can still sweep values and reproduce the old behavior for
 comparison.
 
-**Not yet re-run against the golden dataset.** The numbers above are from the
-job-description probe, not a full harness run. A v3 run under the new
-behavior is the outstanding measurement, and the expected direction is that
-the two near-miss items (gd-038, gd-039) improve, since they were refusal
-misses caused by the gate letting through high-lexical-overlap questions the
-model then answered correctly anyway.
+**Measured against the golden dataset: eval run 10, dataset v3, 41 items,
+confidence_threshold None.**
+
+| Metric | run 9 (gate at 0.70) | run 10 (gate removed) |
+| --- | --- | --- |
+| Faithfulness | 0.995 | 0.996 |
+| Answer relevancy | 0.784 | 0.820 |
+| Context precision | 0.727 | 0.727 |
+| Refusal accuracy | 6/8 (75%) | 8/8 (100%) |
+
+Scored 33/33 answerable items, none timed out.
+
+Refusal accuracy went up, not down. That is the result worth understanding,
+because removing a refusal gate sounds like it should do the opposite.
+
+The two misses in run 9 were gd-038 and gd-039, the deliberate near-miss
+items. They were not caught by the gate: their lexical overlap with real
+content scored 0.999 and 0.875, well above 0.70, so the gate passed them
+through and the model answered. The gate was making the wrong call in both
+directions at once, refusing questions the corpus answered (measured
+separately against a real job description, 0.001 to 0.13 for questions
+answered outright) while admitting questions it did not. Removing it left
+the decision with the only component that reads the text, and both items now
+refuse correctly.
+
+Answer relevancy improved 0.784 to 0.820, consistent with the same cause:
+questions that previously received a canned refusal now get a real answer
+scored on its merits. Faithfulness and context precision are unchanged,
+which is expected, since neither depends on the refuse/answer decision.
+
+The costs stated above still stand and are not measured by these numbers: a
+refusal now pays for a model call, and refusal depends on instruction
+adherence rather than arithmetic. Run 10 shows that adherence held on 8 of 8
+refusal items and 33 of 33 answerable ones, which is evidence, not a
+guarantee.
