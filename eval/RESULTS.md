@@ -345,3 +345,35 @@ refusal now pays for a model call, and refusal depends on instruction
 adherence rather than arithmetic. Run 10 shows that adherence held on 8 of 8
 refusal items and 33 of 33 answerable ones, which is evidence, not a
 guarantee.
+
+## Run 11: confirming the plain-prose prompt did not move the numbers (2026-08-29)
+
+The answering prompt changed after run 10, to require plain prose and
+concision. The model had been returning markdown, which the client renders as
+literal text, so answers arrived as a wall of asterisks; it was also
+restating whole documents for questions about part of them.
+
+That is a change to the component whose output every one of these metrics
+scores, so the published numbers had to be re-measured rather than assumed to
+hold.
+
+| Metric | run 10 (prior prompt) | run 11 (current prompt) |
+| --- | --- | --- |
+| Faithfulness | 0.9962 | 0.9924 |
+| Answer relevancy | 0.8200 | 0.8197 |
+| Context precision | 0.7273 | 0.7273 |
+| Refusal accuracy | 8/8 | 8/8 |
+
+Scored 33/33 both times, none timed out.
+
+Nothing moved. Context precision is identical, as expected, since it scores
+retrieval and the prompt does not touch retrieval. Answer relevancy is
+unchanged to three decimal places. Faithfulness fell by 0.0038, which is
+about an eighth of one item across 33: inside the noise of an LLM judge, not
+a signal. Refusal accuracy held at 8/8, which was the real risk, since a
+prompt carrying more formatting instructions could plausibly have diluted the
+refusal instruction sitting next to them.
+
+Worth stating plainly: a shorter answer scoring the same on answer relevancy
+is a small win that these metrics do not capture. None of them rewards
+concision, so the improvement that motivated the change is invisible here.
