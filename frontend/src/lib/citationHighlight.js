@@ -8,6 +8,30 @@
  */
 const MIN_MATCH_LENGTH = 12;
 
+/**
+ * Pull a match onto word boundaries.
+ *
+ * The longest common substring is found character by character, so it
+ * happily starts or ends mid-word: a match on "problems into scalable"
+ * rendered as "s into scalable", with a stray leading "s" that reads as a
+ * rendering bug rather than a citation. Trim inward until both ends sit on a
+ * word boundary, then discard what is left if trimming ate too much of it.
+ */
+function snapToWordBoundaries(text, start, end) {
+  const isWord = (ch) => ch !== undefined && /[\w'-]/.test(ch);
+
+  // Walk the start forward while it sits inside a word.
+  while (start < end && isWord(text[start - 1]) && isWord(text[start])) start++;
+  // Walk the end backward while it sits inside a word.
+  while (end > start && isWord(text[end]) && isWord(text[end - 1])) end--;
+
+  // Drop leading and trailing whitespace the trim may have exposed.
+  while (start < end && /\s/.test(text[start])) start++;
+  while (end > start && /\s/.test(text[end - 1])) end--;
+
+  return { start, end };
+}
+
 function longestCommonSubstring(a, b) {
   const na = a.toLowerCase();
   const nb = b.toLowerCase();
@@ -34,7 +58,15 @@ export function highlightCitations(answer, sources) {
   for (const src of sources) {
     const match = longestCommonSubstring(src.text, answer);
     if (match.length >= MIN_MATCH_LENGTH) {
-      spans.push({ start: match.bStart, end: match.bStart + match.length, sourceId: src.id });
+      const { start, end } = snapToWordBoundaries(
+        answer,
+        match.bStart,
+        match.bStart + match.length
+      );
+      // Snapping can shrink a match below the threshold that justified it.
+      if (end - start >= MIN_MATCH_LENGTH) {
+        spans.push({ start, end, sourceId: src.id });
+      }
     }
   }
   spans.sort((a, b) => a.start - b.start);
