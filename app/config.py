@@ -58,15 +58,25 @@ class Settings(BaseSettings):
     gemini_llm_model: str = "gemini-3.1-flash-lite"
 
     reranker_model: str = "ms-marco-MiniLM-L-12-v2"
-    # Sigmoid/softmax score [0, 1] from flashrank, not a raw logit.
-    # First tuned -6.0 -> -3.0 against the old CrossEncoder's raw-logit
-    # scale (30-item golden dataset, refusal accuracy 50% -> 83%,
-    # faithfulness/relevancy/precision unchanged). Retuned to 0.7 after
-    # the flashrank swap changed the score scale entirely: a local
-    # probe found expected_refusal items scoring <=0.405 and answerable
-    # items >=0.909, so 0.7 sits centered in that gap. Full numbers in
-    # eval/RESULTS.md.
-    confidence_threshold: float = 0.7
+    # Optional hard floor on the top reranked score, OFF by default.
+    #
+    # This used to be 0.7 and gated every answer: below it, the API refused
+    # without calling the model. It was tuned twice against
+    # eval/golden_dataset.json (-6.0 -> -3.0 on the old CrossEncoder logit
+    # scale, then 0.7 after the flashrank swap moved scores to [0, 1]) and
+    # looked well separated, because those questions were written from the
+    # corpus and share its phrasing, scoring 0.909 and above.
+    #
+    # Real questions do not. Against an uploaded job description, questions
+    # the document answers outright scored 0.001 to 0.13 while questions it
+    # genuinely could not answer scored 0.000, so no threshold separated
+    # them. The number was fitted to a sample that did not represent the
+    # traffic it gated. The refusal decision moved to the model, which reads
+    # the text instead of scoring a similarity: see services/answering.py.
+    #
+    # Kept as None so the eval harness can still sweep values and reproduce
+    # the old behavior for comparison. Nothing in the request path sets it.
+    confidence_threshold: float | None = None
 
     # Lets tests drive ingestion deterministically by calling
     # process_available_jobs() themselves instead of racing a live thread.
