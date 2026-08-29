@@ -5,8 +5,10 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from app.middleware.correlation_id import correlation_id_var
+
 from app.config import settings
-from app.core.exceptions import RateLimitExceededException
+from app.core.exceptions import error_body, RateLimitExceededException
 
 _request_counts: dict[int, tuple[float, int]] = defaultdict(lambda: (0.0, 0))
 # Never evicts a key, only resets its window - a full clear once this
@@ -35,6 +37,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         if count > settings.rate_limit_requests:
             exc = RateLimitExceededException()
-            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+            return JSONResponse(
+                status_code=exc.status_code,
+                content=error_body(exc, correlation_id_var.get()),
+            )
         
         return await call_next(request)

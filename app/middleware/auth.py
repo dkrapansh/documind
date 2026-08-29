@@ -2,7 +2,9 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from app.core.exceptions import InvalidAPIKeyException
+from app.middleware.correlation_id import correlation_id_var
+
+from app.core.exceptions import error_body, InvalidAPIKeyException
 from app.core.security import hash_key
 from app.db.session import SessionLocal
 from app.repositories.api_keys import get_by_hashed_key
@@ -45,4 +47,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
     @staticmethod
     def _reject() -> JSONResponse:
         exc = InvalidAPIKeyException()
-        return JSONResponse(status_code=exc.status_code, content = {"detail": exc.detail})
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=error_body(exc, correlation_id_var.get()),
+        )

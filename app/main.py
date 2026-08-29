@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from app import APP_VERSION
 from app.api.routers import health, auth, documents, history, query, eval
 from app.config import settings
-from app.core.exceptions import AppException
+from app.core.exceptions import AppException, error_body
 from app.core.logging import configure_logging
 from app.db.session import SessionLocal
 from app.middleware.auth import AuthMiddleware
@@ -93,26 +93,19 @@ app.add_middleware(
     allow_headers=["X-API-Key", "Content-Type"],
 )
 
-def _error_body(request: Request, code: str, detail: str) -> dict:
-    """One error shape for the whole API.
+@app.exception_handler(AppException)
+async def app_exception_handler(request: Request, exc: AppException):
+    """One error shape for the whole API, shared with the middleware via
+    core.exceptions.error_body.
 
-    `correlation_id` is the point of this: every error a caller sees carries
+    `correlation_id` is the point of it: every error a caller sees carries
     the same id that appears on the server's log records for that request, so
     a bug report can be pasted straight into a log search instead of being
     matched by guesswork over timestamps.
     """
-    return {
-        "detail": detail,
-        "code": code,
-        "correlation_id": getattr(request.state, "correlation_id", None),
-    }
-
-
-@app.exception_handler(AppException)
-async def app_exception_handler(request: Request, exc: AppException):
     return JSONResponse(
         status_code=exc.status_code,
-        content=_error_body(request, exc.code, exc.detail),
+        content=error_body(exc, getattr(request.state, "correlation_id", None)),
     )
 
 
@@ -138,13 +131,13 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
             "error_type": type(exc).__name__,
         },
     )
+    generic = AppException()
+    generic.detail = (
+        "An unexpected error occurred. If it persists, quote the correlation id."
+    )
     return JSONResponse(
         status_code=500,
-        content=_error_body(
-            request,
-            "internal_error",
-            "An unexpected error occurred. If it persists, quote the correlation id.",
-        ),
+        content=error_body(generic, getattr(request.state, "correlation_id", None)),
     )
 
 

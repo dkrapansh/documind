@@ -122,3 +122,16 @@ class EvalRunAlreadyActiveException(AppException):
         "An evaluation run is already in progress. Wait for it to finish before "
         "starting another."
     )
+
+
+def error_body(exc: AppException, correlation_id: str | None) -> dict:
+    """The one error shape the whole API returns.
+
+    Middleware cannot raise into FastAPI's exception handlers, since it runs
+    outside them, so it builds its response directly. That is how the 401 and
+    429 paths, the two errors callers hit most, ended up returning a bare
+    `{"detail": ...}` while every route error carried a code and a
+    correlation id. Both sides call this now, so the contract holds wherever
+    the error came from.
+    """
+    return {"detail": exc.detail, "code": exc.code, "correlation_id": correlation_id}

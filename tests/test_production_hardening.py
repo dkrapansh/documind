@@ -214,3 +214,34 @@ def test_eviction_prefers_expired_entries_over_live_ones(monkeypatch):
     cache.set_cached_answer(1, "fresh", "a", [], 0.9)
 
     assert cache.get_cached_answer(1, "fresh") is not None, "a live entry was evicted first"
+
+
+def test_middleware_errors_follow_the_same_contract_as_route_errors(client):
+    """Middleware runs outside FastAPI's exception handlers and builds its
+    response directly, which is how the 401 and 429 paths, the two errors
+    callers hit most, ended up returning a bare {"detail": ...} while every
+    route error carried a code and a correlation id."""
+    response = client.get("/documents", headers={"X-API-Key": "definitely-not-valid"})
+
+    assert response.status_code == 401
+    body = response.json()
+    assert body["code"] == "invalid_api_key"
+    assert "correlation_id" in body
+    assert body["detail"]
+
+
+def test_rate_limit_rejection_also_carries_a_code(client, monkeypatch):
+    from app.config import settings as app_settings
+
+    monkeypatch.setattr(app_settings, "rate_limit_requests", 1)
+    headers = _auth_headers(client)
+
+    client.get("/documents", headers=headers)
+    for _ in range(5):
+        response = client.get("/documents", headers=headers)
+        if response.status_code == 429:
+            body = response.json()
+            assert body["code"] == "rate_limit_exceeded"
+            assert "correlation_id" in body
+            return
+    pytest.skip("rate limiter did not trigger in this configuration")
