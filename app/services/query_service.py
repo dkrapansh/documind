@@ -99,6 +99,14 @@ def answer_query(
         answer = answer_question(question, chunks).answer
         if not answer:
             raise ValueError("generation returned an empty answer")
+        # The model, not a score threshold, decides whether the context
+        # actually answers the question (see services/reranking.py). When it
+        # refuses, drop the retrieved chunks: they were candidates the model
+        # judged insufficient, and showing them as sources under a refusal
+        # would cite documents as support for an answer that was never given.
+        if answer.strip() == REFUSAL_ANSWER:
+            chunks = []
+            confidence = None
     except Exception:
         logger.exception(
             "query_service.answer_query: generation failed for tenant %s", tenant_id

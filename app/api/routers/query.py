@@ -144,7 +144,16 @@ async def query_documents_stream(
                 accumulated_answer.append(GENERATION_FAILURE_ANSWER)
                 yield f"event: error\ndata: {json.dumps({'message': GENERATION_FAILURE_ANSWER})}\n\n"
 
-        yield "event: done\ndata: {}\n\n"
+        # The model, not a score threshold, decides whether to refuse (see
+        # services/reranking.py). Sources are streamed before generation
+        # starts, deliberately, so the client can show them while the answer
+        # types out. That means a refusal cannot simply omit them the way the
+        # non-streaming path does. Instead the done event reports whether
+        # this turned out to be a refusal, so the client can drop the sources
+        # it was shown rather than leave documents displayed as support for
+        # an answer that was never given.
+        refused = "".join(accumulated_answer).strip() == REFUSAL_ANSWER
+        yield f"event: done\ndata: {json.dumps({'refused': refused})}\n\n"
 
     log_task = BackgroundTask(
         _log_streamed_query,
