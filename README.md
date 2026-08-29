@@ -301,6 +301,34 @@ Faithfulness barely moved even under arithmetic and multi-hop questions.
 Full breakdown, including why context precision sits at 0.73, is in
 [`eval/RESULTS.md`](eval/RESULTS.md).
 
+## Keeping this README true
+
+Code and the prose describing it drift apart independently, and the drift is invisible to
+whoever wrote both, because they read what they meant rather than what is there.
+
+So after the architecture review was closed out, a second and different audit was run:
+take every factual claim in this README, in `eval/RESULTS.md`, and in the landing-page
+components, and check each one against the code and against the two live deployments. Not
+"is this well built", but "is this true".
+
+**Forty-eight claims checked. Thirty-five held. Thirteen did not**, and every one of the
+thirteen was live in production. Three were outright wrong, four had been true and were
+overtaken by a later change, and six were defensible in spirit but wrong as written.
+
+The clearest one: `services/answering.py` pins the refusal sentence as a named constant,
+with a comment explaining the wording must not drift because three consumers match on it,
+the eval harness, the source-clearing in `query_service`, and the frontend. The frontend
+then hardcoded a *different* refusal sentence and rendered that instead. The constraint was
+written down correctly and violated in another file by the same hand.
+
+The architecture review had found none of these, and had also missed the confidence
+threshold being measurably wrong, because the code was well layered and did exactly what it
+was designed to do. Checking that a system is well built and checking that its claims are
+true turn out to be two different audits, and the second is the one almost nobody runs.
+
+All thirteen are fixed. The audit was deliberately run without access to the reasoning
+behind the code, since knowing the intent is what lets a wrong claim survive a re-read.
+
 ## Security and reliability
 
 Grouped by what each one protects against. Every item below is a fix for a
