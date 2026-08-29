@@ -1,5 +1,6 @@
 import json
 import logging
+import threading
 import os
 import time
 from pathlib import Path
@@ -22,6 +23,38 @@ from app.services.reranking import retrieve_ranked
 from app.services.text_extraction import extract_text
 
 logger = logging.getLogger(__name__)
+
+# Tenants with an evaluation run currently executing.
+#
+# A run is minutes of real model calls against a shared free-tier quota, and
+# POST /eval/runs previously accepted every request: N calls started N full
+# runs, which did not merely cost N times as much but exhausted the
+# per-minute quota so that all N runs failed partway and recorded null
+# scores. The endpoint is authenticated and ephemeral tenants are already
+# refused, so this guards against an impatient double-click and a retry loop
+# rather than an attacker.
+#
+# In-process, like the rate limiter, and correct for the single instance this
+# deploys to. A multi-instance deployment would need this in Postgres, most
+# naturally as a status column on eval_runs with a uniqueness constraint on
+# (tenant_id) while active.
+_active_runs: set[int] = set()
+_active_runs_lock = threading.Lock()
+
+
+def _claim_run_slot(tenant_id: int) -> bool:
+    """True if this caller now owns the tenant's run slot."""
+    with _active_runs_lock:
+        if tenant_id in _active_runs:
+            return False
+        _active_runs.add(tenant_id)
+        return True
+
+
+def _release_run_slot(tenant_id: int) -> None:
+    with _active_runs_lock:
+        _active_runs.discard(tenant_id)
+
 
 EVAL_TENANT_NAME = "eval-harness"
 
@@ -298,8 +331,16 @@ def run_eval_in_background(eval_run_id: int, confidence_threshold_override: floa
     already closed by then.
     """
     db = SessionLocal()
+    tenant_id = None
     try:
         eval_run = get_eval_run(db, eval_run_id)
+        tenant_id = eval_run.tenant_id if eval_run is not None else None
         execute_eval_run(db, eval_run, confidence_threshold_override)
     finally:
+        # Released here, not in the router: the router returns as soon as the
+        # row is created, while the run itself is still executing. Releasing
+        # there would make the guard meaningless. In a finally so a crashed
+        # run does not lock the tenant out until the next deploy.
+        if tenant_id is not None:
+            _release_run_slot(tenant_id)
         db.close()

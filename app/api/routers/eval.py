@@ -3,11 +3,15 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.api.security_scheme import api_key_header
-from app.core.exceptions import EphemeralTenantForbiddenException, EvalRunNotFoundException
+from app.core.exceptions import (
+    EphemeralTenantForbiddenException,
+    EvalRunAlreadyActiveException,
+    EvalRunNotFoundException,
+)
 from app.repositories.eval_runs import get_eval_run_for_tenant, list_eval_results
 from app.repositories.tenants import get_by_id as get_tenant_by_id
 from app.schemas.eval import EvalRunRequest, EvalRunResponse
-from app.services.evaluation import run_eval_in_background, start_eval_run
+from app.services.evaluation import _claim_run_slot, _release_run_slot, run_eval_in_background, start_eval_run
 
 router = APIRouter(prefix="/eval", tags=["eval"])
 
@@ -28,7 +32,18 @@ def create_eval_run_endpoint(
     if tenant is not None and tenant.is_ephemeral:
         raise EphemeralTenantForbiddenException()
 
-    eval_run = start_eval_run(db, tenant_id, body.confidence_threshold_override)
+    # Claimed before the row is created, so a second caller is refused rather
+    # than starting a parallel run that would exhaust the shared model quota
+    # and make both runs record null scores. Released by the background task
+    # when the run finishes, since that is when it is actually over.
+    if not _claim_run_slot(tenant_id):
+        raise EvalRunAlreadyActiveException()
+
+    try:
+        eval_run = start_eval_run(db, tenant_id, body.confidence_threshold_override)
+    except Exception:
+        _release_run_slot(tenant_id)
+        raise
     background_tasks.add_task(
         run_eval_in_background, eval_run.id, body.confidence_threshold_override
     )
