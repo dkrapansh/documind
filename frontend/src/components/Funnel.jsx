@@ -8,7 +8,7 @@ const STAGES = [
   { key: "01 · retrieve", count: 20, desc: "dense (pgvector) + BM25, top 10 each", dots: 20 },
   { key: "02 · fuse", count: 14, desc: "Reciprocal Rank Fusion, by position", dots: 14 },
   { key: "03 · rerank", count: 4, desc: "cross-encoder reads query + chunk together", dots: 4 },
-  { key: "04 · gate", count: null, desc: "below threshold → refuse, no model call", dots: 1, staticValue: "0.70" },
+  { key: "04 · judge", count: null, desc: "model reads the context: answer, or refuse", dots: 1, staticValue: "LLM" },
 ];
 
 export function Funnel() {

@@ -44,25 +44,6 @@ section.refuse {
   background: var(--refuse);
 }
 
-.thresh {
-  position: absolute;
-  top: -8px;
-  bottom: -8px;
-  left: 70%;
-  width: 1px;
-  background: var(--ink);
-}
-
-.thresh::after {
-  content: "0.70";
-  position: absolute;
-  top: -20px;
-  left: -14px;
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 10px;
-  color: var(--ink);
-}
-
 .gauge-cap {
   font-family: "IBM Plex Mono", monospace;
   font-size: 12px;

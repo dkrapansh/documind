@@ -165,22 +165,36 @@ export function Demo() {
           setLitSteps(BASE_STEPS.length);
           setNotice(null);
 
+          // An empty payload now means retrieval found nothing at all,
+          // which happens only when the tenant has no documents. It no
+          // longer means "scored below a threshold": the reranker orders
+          // candidates and the model decides whether to answer, so a
+          // refusal is only known once generation finishes (onDone).
           if (!payload.length) {
             setRefused(true);
-            setFinalStep({ label: "below 0.70 threshold", ok: false });
+            setFinalStep({ label: "no indexed content", ok: false });
           } else {
             const top = payload[0]?.confidence;
             setSources(payload);
             setFinalStep(
               top != null
-                ? { label: `${top.toFixed(2)} ≥ 0.70`, ok: true }
+                ? { label: `top score ${top.toFixed(2)}`, ok: true }
                 : { label: "reranked · top 4", ok: true }
             );
           }
         },
         onSession: (id) => setSessionId(id),
         onDelta: (text) => setAnswer((prev) => prev + text),
-        onDone: () => {
+        onDone: (payload) => {
+          // Sources stream before generation starts, so the client has
+          // already shown them by the time the model refuses. Drop them
+          // here rather than leaving documents on screen as support for an
+          // answer that was never given.
+          if (payload?.refused) {
+            setRefused(true);
+            setSources([]);
+            setFinalStep({ label: "not answerable from these documents", ok: false });
+          }
           setStreaming(false);
           setAsking(false);
         },
@@ -284,7 +298,7 @@ export function Demo() {
                     I can&apos;t answer that confidently from the provided documents.
                   </div>
                   <div className="r-meta">
-                    best reranked score below the 0.70 threshold · refused before any model call
+                    the model read the retrieved context and found no answer in it
                   </div>
                 </div>
               ) : answer ? (

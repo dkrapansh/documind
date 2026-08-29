@@ -29,7 +29,6 @@ function GaugeBar({ width, low }) {
   return (
     <div className="bar">
       <div className={`bar-fill${low ? " low" : ""}`} ref={fillRef} />
-      <div className="thresh" />
     </div>
   );
 }
@@ -45,23 +44,22 @@ export function Refusal() {
         <h2 className="sec-h reveal">It refuses to guess.</h2>
         <div className="two-col">
           <p className="sec-body reveal">
-            The confidence check happens <b>before</b> the model is ever called. If the best
-            reranked chunk scores below <b>0.70</b>, DocuMind answers{" "}
-            <b>&ldquo;I can&apos;t answer that confidently.&rdquo;</b> A refusal costs nothing
-            beyond the retrieval that already ran.
+            The model answers <b>only</b> from the retrieved chunks, and replies with a fixed
+            refusal sentence when they do not contain the answer. Refusing is a decision made
+            after reading the text, not a score compared against a cutoff.
           </p>
           <div className="gauge reveal">
-            <div className="gauge-title">Answerable query</div>
+            <div className="gauge-title">In the documents</div>
             <GaugeBar width={88} />
             <div className="gauge-cap">
-              <span className="verdict ok mono">0.88 ≥ 0.70 · answered</span>
+              <span className="verdict ok mono">answered, with sources cited</span>
             </div>
             <div className="gauge-title" style={{ marginTop: 26 }}>
-              Out-of-scope query
+              Not in the documents
             </div>
             <GaugeBar width={41} low />
             <div className="gauge-cap">
-              <span className="verdict no mono">0.41 &lt; 0.70 · refused, no model call</span>
+              <span className="verdict no mono">refused, no sources shown</span>
             </div>
           </div>
         </div>

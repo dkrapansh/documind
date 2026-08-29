@@ -169,7 +169,7 @@ function dispatchFrame(frame, handlers) {
   else if (event === "session") handlers.onSession?.(payload.session_id);
   else if (event === "delta") handlers.onDelta?.(payload.text);
   else if (event === "error") handlers.onError?.(new ApiError(payload.message));
-  else if (event === "done") handlers.onDone?.();
+  else if (event === "done") handlers.onDone?.(payload);
 }
 
 export { ApiError, COLD_START_MESSAGE };
