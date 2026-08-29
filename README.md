@@ -230,12 +230,16 @@ A hand-built golden dataset against a fictional ten-document corpus.
 `eval/run_eval.py` runs every question through the real retrieval and
 answering code, not a copy of it, and scores the results with RAGAS.
 
-| Metric | v2 (30 items) | v3 (41 items) |
-|---|---|---|
-| Faithfulness | 1.0 | 0.99 |
-| Answer relevancy | 0.83 | 0.78 |
-| Context precision | 0.79 | 0.73 |
-| Refusal accuracy | 6/6 (100%) | 6/8 (75%) |
+| Metric | v2 (30 items) | v3, score gate | v3, gate removed |
+|---|---|---|---|
+| Faithfulness | 1.0 | 0.99 | 0.99 |
+| Answer relevancy | 0.83 | 0.78 | 0.82 |
+| Context precision | 0.79 | 0.73 | 0.73 |
+| Refusal accuracy | 6/6 (100%) | 6/8 (75%) | 8/8 (100%) |
+
+The last column is the system as it runs today (eval run 10). Removing the
+score gate improved refusal accuracy and answer relevancy and left
+faithfulness and context precision unchanged.
 
 **The confidence threshold was removed, and finding out why is the most
 useful thing this evaluation did.** It gated every answer: below 0.70, the
@@ -276,16 +280,24 @@ ask about the case it excludes, cross-document comparisons, multi-hop
 questions, and two refusal questions that sit close to real content
 instead of being unrelated to it.
 
-The drop in refusal accuracy to 6/8 in v3 is the interesting result.
-Both misses are the two new near-miss questions: their overlap with
-real content was strong enough to clear the confidence gate before the
-model ever ran. But in both cases the model's actual answer was still
-correct and honest. It just said so in its own words instead of
-matching the exact sentence this check looks for, so the system never
-gave a wrong answer, it just paid for a model call it didn't need to.
-Faithfulness barely moved even under arithmetic and multi-hop
-questions. Full breakdown, including why context precision dropped, is
-in [`eval/RESULTS.md`](eval/RESULTS.md).
+Refusal accuracy is the interesting result, because it moved twice. v3
+added two deliberate near-miss questions, which sit close to real content
+instead of being unrelated to it, and refusal accuracy fell to 6/8. Both
+misses were those two: their lexical overlap with real content was strong
+enough to clear the 0.70 score gate, and the model then answered them.
+
+Removing the gate took that to 8/8. The reason is worth stating, because it
+is the opposite of what a "we removed a safety check" change sounds like:
+the gate was never the thing deciding those two correctly. It let them
+through on overlap, and the model, reading the actual text, is the component
+that recognises the question is not answerable from it. Deleting the gate
+did not weaken refusal, it removed a step that was making the wrong call in
+both directions, refusing questions the documents answered and admitting
+questions they did not.
+
+Faithfulness barely moved even under arithmetic and multi-hop questions.
+Full breakdown, including why context precision sits at 0.73, is in
+[`eval/RESULTS.md`](eval/RESULTS.md).
 
 ## Security and reliability
 
