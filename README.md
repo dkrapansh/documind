@@ -329,6 +329,33 @@ Full breakdown, including why context precision sits at 0.73, is in
 - **Ephemeral tenants are swept on every boot**, on top of the sweep
   that already runs on new demo traffic, since Render has no cron job
   and an idle instance would otherwise never clean up.
+- **Every error has a stable code and a correlation id.** Anything that was
+  not an expected application error used to return an empty 500 with nothing
+  logged by the application, so the only evidence it happened was a platform
+  access log line. Errors now carry a machine-readable `code` (clients that
+  branch on prose break the moment the wording improves) and the same
+  correlation id that appears on the server's log records for that request.
+  The message stays generic on unhandled errors, since exception text can
+  contain a connection string or a row of user data.
+- **The reranker load is bounded and its failure is retryable.** The model
+  loads on first use, which on a cold instance means a download from a CDN
+  this service does not control. That happened inside a user's request with
+  no timeout and surfaced as a 500. It now returns a 503 the caller can
+  retry, one thread loads while others wait rather than each starting its own
+  download, and a failed load is not cached, so a transient CDN outage does
+  not last until the next deploy.
+- **A second concurrent evaluation run is refused.** Each run is minutes of
+  real model calls against a shared free-tier quota. Two at once do not
+  merely cost twice as much: they exhaust the per-minute quota and both
+  record null scores.
+- **The query cache is bounded.** TTL alone never bounded it, since an entry
+  was only removed when someone read it after expiry. A question asked once
+  stayed resident, and entries invalidated by a document change became
+  unreachable and therefore permanent.
+- **Tenant-scoped columns are indexed.** Every query filters on `tenant_id`
+  inside the SQL, and none of those columns had an index, so each filter was
+  a sequential scan. The worst was on the hot path: BM25 reads every chunk
+  belonging to a tenant on every question.
 - **Ingestion is a durable job, not an in-memory task.** It used to run in a
   FastAPI `BackgroundTask`, so a process death mid-job left the document at
   `processing` forever with nothing recording that the work had started.
