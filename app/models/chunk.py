@@ -20,7 +20,7 @@ class Chunk(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     document_id: Mapped[int] = mapped_column(ForeignKey("documents.id"))
-    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"))
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), index=True)
     chunk_index: Mapped[int] = mapped_column(Integer)
     text: Mapped[str] = mapped_column(String)
     embedding: Mapped[list[float]] = mapped_column(Vector(1536))

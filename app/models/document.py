@@ -22,7 +22,7 @@ class Document(Base):
     __tablename__ = "documents"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"))
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), index=True)
     filename: Mapped[str] = mapped_column(String(500))
     content_hash: Mapped[str] = mapped_column(String(64), index=True)
     status: Mapped[str] = mapped_column(String(20), default=STATUS_PENDING)
