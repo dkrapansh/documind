@@ -93,9 +93,59 @@ app.add_middleware(
     allow_headers=["X-API-Key", "Content-Type"],
 )
 
+def _error_body(request: Request, code: str, detail: str) -> dict:
+    """One error shape for the whole API.
+
+    `correlation_id` is the point of this: every error a caller sees carries
+    the same id that appears on the server's log records for that request, so
+    a bug report can be pasted straight into a log search instead of being
+    matched by guesswork over timestamps.
+    """
+    return {
+        "detail": detail,
+        "code": code,
+        "correlation_id": getattr(request.state, "correlation_id", None),
+    }
+
+
 @app.exception_handler(AppException)
 async def app_exception_handler(request: Request, exc: AppException):
-    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=_error_body(request, exc.code, exc.detail),
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Anything that is not an AppException is a bug, by the contract in
+    core/exceptions.py.
+
+    Without this, such a bug returned Starlette's default 500: an empty body,
+    nothing logged by this application, and no correlation id, so the only
+    evidence it happened was a platform access log line. Now it is logged
+    with a traceback and returns the same shape as every other error.
+
+    The message stays generic on purpose. The exception text can contain a
+    connection string, a row of user data, or a filesystem path, none of
+    which belongs in an HTTP response to an unauthenticated caller.
+    """
+    logger.exception(
+        "unhandled exception",
+        extra={
+            "path": request.url.path,
+            "method": request.method,
+            "error_type": type(exc).__name__,
+        },
+    )
+    return JSONResponse(
+        status_code=500,
+        content=_error_body(
+            request,
+            "internal_error",
+            "An unexpected error occurred. If it persists, quote the correlation id.",
+        ),
+    )
 
 
 app.include_router(health.router)
